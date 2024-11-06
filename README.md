@@ -12,4 +12,4 @@ I will not review pull requests. I will not review GitHub issues.
 
 ## Contact
 
-For business inquiries, please contact me via email : amelie.heinrich.dev@gmail.com
+For business inquiries, or if you would like a debug build of the game, please contact me via email : amelie.heinrich.dev@gmail.com
