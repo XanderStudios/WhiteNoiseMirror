@@ -57,13 +57,13 @@ float4 Main(VertexOut vert) : SV_TARGET
 
             // diffuse
             float3 norm = vert.normals;
-            float diff = max(dot(norm, light_dir), 0.2);
+            float diff = max(dot(norm, light_dir), 0.1);
             float3 diffuse = diff * albedo.xyz;
 
             // specular
             float3 view_dir = normalize(Camera.CameraPosition.xyz - vert.frag_pos);
             float3 reflect_dir = reflect(-light_dir, norm);
-            float spec = max(dot(view_dir, reflect_dir), 0.2);
+            float spec = max(dot(view_dir, reflect_dir), 0.1);
             float3 specular = spec * albedo.xyz;
 
             float theta = dot(light_dir, normalize(-Flashlight.Direction));
@@ -73,9 +73,9 @@ float4 Main(VertexOut vert) : SV_TARGET
             diffuse *= intensity;
             specular *= intensity;
 
-            result = (ambient + diffuse + specular) * 4.0;
+            result = (ambient + diffuse + specular) * 0.6;
         } else {
-            result = albedo.xyz * 0.01;
+            result = albedo.xyz * 0.02;
         }
     } else {
         result = albedo.xyz;
