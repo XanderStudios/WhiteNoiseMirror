@@ -8,6 +8,7 @@
 
 #include <string>
 #include <vector>
+#include <json/json.hpp>
 
 #include "wn_common.h"
 #include "wn_timer.h"
@@ -34,3 +35,5 @@ i32 fs_filesize(const std::string& path);
 std::string fs_readtext(const std::string& path);
 std::vector<uint8_t> fs_readbytes(const std::string& path);
 void fs_getfiletime(const std::string& path, u32& low, u32& high);
+nlohmann::json fs_loadjson(const std::string& path);
+void fs_writejson(const std::string& path, const nlohmann::json& json);

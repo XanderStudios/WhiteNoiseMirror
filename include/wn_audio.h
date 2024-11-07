@@ -10,15 +10,19 @@
 
 #include "fmod.hpp"
 
-struct audio_device
-{
-    FMOD::System* system;
-};
-
 struct audio_source
 {
     FMOD::Sound* sound;
     FMOD::Channel* channel;
+};
+
+struct audio_device
+{
+    FMOD::System* system;
+
+    /// @note(ame): default sounds that are always loaded
+    audio_source door_open;
+    audio_source door_close;
 };
 
 extern audio_device audio;

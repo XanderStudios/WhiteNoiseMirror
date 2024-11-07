@@ -167,7 +167,8 @@ void video_init(SDL_Window* window, bool use_debug)
     ImGui::StyleColorsDark();
     ImGuiStyle& Style = ImGui::GetStyle();
 
-    ImGui::StyleColorsClassic();
+    //ImGui::StyleColorsClassic();
+    imgui_style();
 
     video.font_descriptor = descriptor_heap_alloc(&video.shader_heap);
 

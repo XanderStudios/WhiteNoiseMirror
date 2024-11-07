@@ -10,6 +10,9 @@
 #include <d3d12shader.h>
 #include <dxcapi.h>
 
+#include <locale>
+#include <codecvt>
+
 #include "wn_d3d12.h"
 #include "wn_video.h"
 #include "wn_output.h"
@@ -17,6 +20,7 @@
 
 /// @note(ame): globals
 texture_view_cache tvc;
+gpu_resource_tracker gpu_tracker;
 
 /// @note(ame): descriptor
 
@@ -177,7 +181,7 @@ void swapchain_resize(swapchain *swap, u32 width, u32 height)
         swap->wrappers[i].format = DXGI_FORMAT_R8G8B8A8_UNORM;
         swap->wrappers[i].levels = 1;
         swap->wrappers[i].state = D3D12_RESOURCE_STATE_COMMON;
-        swap->wrappers[i].resource = swap->resources[i];
+        swap->wrappers[i].resource.resource = swap->resources[i];
     }
 }
 
@@ -488,16 +492,16 @@ void command_buffer_copy_texture_to_texture(command_buffer *buf, texture *dst, t
 /// Courtesy to Dihara Wijetunga's Wolfenstein PT
 void command_buffer_copy_buffer_to_texture(command_buffer *buf, texture *dst, buffer *src, u32 mip_count)
 {
-    D3D12_RESOURCE_DESC desc = dst->resource->GetDesc();
+    D3D12_RESOURCE_DESC desc = dst->resource.resource->GetDesc();
 
-    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(mip_count);
-    std::vector<u32> num_rows(mip_count);
-    std::vector<u64> row_sizes(mip_count);
+    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(dst->levels);
+    std::vector<u32> num_rows(dst->levels);
+    std::vector<u64> row_sizes(dst->levels);
     u64 total_size = 0;
 
-    video.device->GetCopyableFootprints(&desc, 0, mip_count, 0, footprints.data(), num_rows.data(), row_sizes.data(), &total_size);
+    video.device->GetCopyableFootprints(&desc, 0, dst->levels, 0, footprints.data(), num_rows.data(), row_sizes.data(), &total_size);
 
-    for (uint32_t i = 0; i < mip_count; i++) {
+    for (uint32_t i = 0; i < dst->levels; i++) {
         D3D12_TEXTURE_COPY_LOCATION src_copy = {};
         src_copy.pResource = src->resource;
         src_copy.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
@@ -519,7 +523,7 @@ void command_buffer_copy_buffer_to_buffer(command_buffer *buf, buffer *dst, buff
 
 /// @note(ame): texture
 
-void texture_init(texture *tex, u32 width, u32 height, DXGI_FORMAT format, u32 flags, u32 levels, bool copy)
+void texture_init(texture *tex, u32 width, u32 height, DXGI_FORMAT format, u32 flags, u32 levels, bool copy, const std::string& name)
 {
     tex->uuid = wn_uuid();
     tex->width = width;
@@ -543,23 +547,24 @@ void texture_init(texture *tex, u32 width, u32 height, DXGI_FORMAT format, u32 f
     pipeline_desc.Flags = D3D12_RESOURCE_FLAGS(flags);
     pipeline_desc.MipLevels = levels;
 
-    HRESULT result = video.device->CreateCommittedResource(&properties, D3D12_HEAP_FLAG_NONE, &pipeline_desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&tex->resource));
-    if (FAILED(result)) {
-        throw_error("Failed to create resoruce");
-    }
+    gpu_resource_alloc(&tex->resource, &pipeline_desc, &properties, D3D12_RESOURCE_STATE_COMMON, name);
 }
 
 void texture_free(texture *tex)
 {
-    SAFE_RELEASE(tex->resource);
+    gpu_resource_free(&tex->resource);
 }
 
 u64 texture_get_size(texture *tex, u32 mip)
 {
-    D3D12_RESOURCE_DESC desc = tex->resource->GetDesc();
+    D3D12_RESOURCE_DESC desc = tex->resource.resource->GetDesc();
     
     u64 val = 0;
-    video.device->GetCopyableFootprints(&desc, mip, 1, 0, nullptr, nullptr, nullptr, &val);
+    if (mip == TEXTURE_ALL_MIPS) {
+        video.device->GetCopyableFootprints(&desc, 0, tex->levels, 0, nullptr, nullptr, nullptr, &val);
+    } else {
+        video.device->GetCopyableFootprints(&desc, mip, 1, 0, nullptr, nullptr, nullptr, &val);
+    }
     return val;
 }
 
@@ -750,7 +755,7 @@ void compute_pipeline_free(compute_pipeline *pipeline)
 
 /// @note(ame): buffers
 
-void buffer_init(buffer *buf, u64 size, u64 stride, buffer_type type, bool readback)
+void buffer_init(buffer *buf, u64 size, u64 stride, buffer_type type, bool readback, const std::string& name)
 {
     buf->size = size;
     buf->stride = stride;
@@ -800,20 +805,17 @@ void buffer_init(buffer *buf, u64 size, u64 stride, buffer_type type, bool readb
         }
     }
 
-    HRESULT result = video.device->CreateCommittedResource(&properties, D3D12_HEAP_FLAG_NONE, &desc, buf->state, nullptr, IID_PPV_ARGS(&buf->resource));
-    if (FAILED(result)) {
-        throw_error("Failed to create buffer!");
-    }
+    gpu_resource_alloc(&buf->resource, &desc, &properties, buf->state, name);
 
     switch (type) {
         case BufferType_Vertex: {
-            buf->vbv.BufferLocation = buf->resource->GetGPUVirtualAddress();
+            buf->vbv.BufferLocation = buf->resource.resource->GetGPUVirtualAddress();
             buf->vbv.SizeInBytes = size;
             buf->vbv.StrideInBytes = stride;
             break;
         }
         case BufferType_Index: {
-            buf->ibv.BufferLocation = buf->resource->GetGPUVirtualAddress();
+            buf->ibv.BufferLocation = buf->resource.resource->GetGPUVirtualAddress();
             buf->ibv.SizeInBytes = size;
             buf->ibv.Format = DXGI_FORMAT_R32_UINT;
             break;
@@ -824,7 +826,7 @@ void buffer_init(buffer *buf, u64 size, u64 stride, buffer_type type, bool readb
 void buffer_build_constant(buffer *buf)
 {
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvd = {};
-    cbvd.BufferLocation = buf->resource->GetGPUVirtualAddress();
+    cbvd.BufferLocation = buf->resource.resource->GetGPUVirtualAddress();
     cbvd.SizeInBytes = buf->size;
     if (buf->cbv.valid == false)
         buf->cbv = descriptor_heap_alloc(&video.shader_heap);
@@ -869,9 +871,9 @@ void buffer_map(buffer *buf, i32 start, i32 end, void **data)
 
     HRESULT result = 0;
     if (range.Begin != range.End) {
-        result = buf->resource->Map(0, &range, data);
+        result = buf->resource.resource->Map(0, &range, data);
     } else {
-        result = buf->resource->Map(0, nullptr, data);
+        result = buf->resource.resource->Map(0, nullptr, data);
     }
     if (FAILED(result)) {
         throw_error("Failed to map D3D12 buffer!");
@@ -880,7 +882,7 @@ void buffer_map(buffer *buf, i32 start, i32 end, void **data)
 
 void buffer_unmap(buffer *buf)
 {
-    buf->resource->Unmap(0, nullptr);
+    buf->resource.resource->Unmap(0, nullptr);
 }
 
 void buffer_free(buffer *buf)
@@ -888,7 +890,7 @@ void buffer_free(buffer *buf)
     descriptor_free(&buf->cbv);
     descriptor_free(&buf->srv);
     descriptor_free(&buf->uav);
-    SAFE_RELEASE(buf->resource);
+    gpu_resource_free(&buf->resource);
 }
 
 /// @note(ame): root signature
@@ -1082,5 +1084,40 @@ void tvc_release_view(tvc_entry *entry)
         texture_view_free(&entry->view);
         tvc.entries[entry->parent->uuid].erase(std::find(tvc.entries[entry->parent->uuid].begin(), tvc.entries[entry->parent->uuid].end(), entry));
         delete entry;
+    }
+}
+
+/// @note(ame): resource tracker
+
+void gpu_resource_alloc(gpu_resource *res, D3D12_RESOURCE_DESC *res_desc, D3D12_HEAP_PROPERTIES *heap_props, D3D12_RESOURCE_STATES state, const std::string& name)
+{
+    res->name = name;
+    res->uuid = wn_uuid();
+
+    HRESULT result = video.device->CreateCommittedResource(heap_props, D3D12_HEAP_FLAG_NONE, res_desc, state, nullptr, IID_PPV_ARGS(&res->resource));
+    if (FAILED(result)) {
+        log("[d3d12] Failed to create resource %s", name.c_str());
+    }
+
+    std::wstring resource_name = std::wstring(name.begin(), name.end());
+    res->resource->SetName(resource_name.c_str());
+
+    gpu_tracker.tracked_allocations.push_back(res);
+}
+
+void gpu_resource_free(gpu_resource *res)
+{
+    SAFE_RELEASE(res->resource);
+    for (u64 i = 0; i < gpu_tracker.tracked_allocations.size(); i++) {
+        if (res->uuid == gpu_tracker.tracked_allocations[i]->uuid) {
+            gpu_tracker.tracked_allocations.erase(gpu_tracker.tracked_allocations.begin() + i);
+        }
+    }
+}
+
+void gpu_resource_tracker_report()
+{
+    for (auto& resource : gpu_tracker.tracked_allocations) {
+        log("[d3d12] report resource %s", resource->name.c_str());
     }
 }

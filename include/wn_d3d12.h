@@ -17,7 +17,7 @@
 #include "wn_filesystem.h"
 
 #define FRAMES_IN_FLIGHT 2
-#define SAFE_RELEASE(object) if (object) object->Release()
+#define SAFE_RELEASE(object) if (object != nullptr) object->Release()
 
 /// @note(ame): descriptor heap
  
@@ -75,7 +75,31 @@ void command_queue_signal(command_queue *queue, fence *fence, u64 value);
 void command_queue_free(command_queue *queue);
 u64 fence_signal(fence *fence, command_queue *queue);
 
+/// @note(ame): GPU tracker
+struct gpu_resource
+{
+    u64 uuid;
+    std::string name;
+    ID3D12Resource* resource;
+
+    operator ID3D12Resource*()
+    {
+        return resource;
+    }
+};
+
+struct gpu_resource_tracker
+{
+    std::vector<gpu_resource*> tracked_allocations;
+};
+
+void gpu_resource_alloc(gpu_resource *res, D3D12_RESOURCE_DESC *res_desc, D3D12_HEAP_PROPERTIES *heap_props, D3D12_RESOURCE_STATES state, const std::string& name = "Resource");
+void gpu_resource_free(gpu_resource *res);
+void gpu_resource_tracker_report();
+
 /// @note(ame): texture
+
+#define TEXTURE_ALL_MIPS 0xFFFF
 
 #define TEXTURE_RTV D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
 #define TEXTURE_DSV D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
@@ -92,7 +116,7 @@ u64 fence_signal(fence *fence, command_queue *queue);
 
 struct texture
 {
-    ID3D12Resource* resource;
+    gpu_resource resource;
     u64 uuid;
 
     u32 width;
@@ -102,13 +126,11 @@ struct texture
     D3D12_RESOURCE_STATES state;
 };
 
-void texture_init(texture *tex, u32 width, u32 height, DXGI_FORMAT format, u32 flags = 0, u32 levels = 1, bool copy = false);
-u64 texture_get_size(texture *tex, u32 mip = 0);
+void texture_init(texture *tex, u32 width, u32 height, DXGI_FORMAT format, u32 flags = 0, u32 levels = 1, bool copy = false, const std::string& name = "Texture");
+u64 texture_get_size(texture *tex, u32 mip = TEXTURE_ALL_MIPS);
 void texture_free(texture *tex);
 
 /// @note(ame): texture view
-
-#define TEXTURE_ALL_MIPS 0xFFFF
 
 enum texture_view_type
 {
@@ -217,22 +239,22 @@ enum buffer_type
 
 struct buffer
 {
-    ID3D12Resource *resource = nullptr;
+    gpu_resource resource = {};
     D3D12_RESOURCE_STATES state;
     buffer_type type;
 
-    u64 size;
-    u64 stride;
+    u64 size = 0;
+    u64 stride = 0;
 
     descriptor srv = {};
     descriptor uav = {};
     descriptor cbv = {};
 
-    D3D12_VERTEX_BUFFER_VIEW vbv;
-    D3D12_INDEX_BUFFER_VIEW ibv;
+    D3D12_VERTEX_BUFFER_VIEW vbv = {};
+    D3D12_INDEX_BUFFER_VIEW ibv = {};
 };
 
-void buffer_init(buffer *buf, u64 size, u64 stride, buffer_type type, bool readback = false);
+void buffer_init(buffer *buf, u64 size, u64 stride, buffer_type type, bool readback = false, const std::string& name = "Buffer");
 void buffer_build_constant(buffer *buf);
 void buffer_build_storage(buffer *buf);
 void buffer_build_shader_resource(buffer *buf);

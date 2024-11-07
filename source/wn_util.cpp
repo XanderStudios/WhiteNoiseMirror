@@ -4,7 +4,9 @@
 // $Create Time: 2024-10-26 16:45:54
 //
 
+#define _USE_MATH_DEFINES
 #include <cstdlib>
+#include <cmath>
 
 #include "wn_util.h"
 

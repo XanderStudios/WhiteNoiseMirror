@@ -122,30 +122,42 @@ public:
 
     virtual void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override
     {
-        if (inBody1.GetObjectLayer() == Layers::TRIGGER && inBody2.GetObjectLayer() == Layers::CHARACTER_GHOST) {
-            physics_trigger* ptr1 = reinterpret_cast<physics_trigger*>(inBody1.GetUserData());
-            entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
-
-            if (!ptr1 || !ptr2)
-                return;
-
-            if (ptr1->on_trigger_enter) {
-                ptr1->on_trigger_enter(ptr2);
-            }
-        }
+        // if (inBody1.GetObjectLayer() == Layers::TRIGGER && inBody2.GetObjectLayer() == Layers::CHARACTER_GHOST) {
+        //     physics_trigger* ptr1 = reinterpret_cast<physics_trigger*>(inBody1.GetUserData());
+        //     entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
+// 
+        //     if (!ptr1 || !ptr2)
+        //         return;
+// 
+        //     if (ptr1->on_trigger_enter) {
+        //         ptr1->on_trigger_enter(ptr2);
+        //     }
+        // }
     }
 
     virtual void OnContactPersisted(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override
 	{
 		if (inBody1.GetObjectLayer() == Layers::TRIGGER && inBody2.GetObjectLayer() == Layers::CHARACTER_GHOST) {
-            physics_trigger* ptr1 = reinterpret_cast<physics_trigger*>(inBody1.GetUserData());
+            entity* ptr1 = reinterpret_cast<entity*>(inBody1.GetUserData());
             entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
 
             if (!ptr1 || !ptr2)
                 return;
 
-            if (ptr1->on_trigger_stay) {
-                ptr1->on_trigger_stay(ptr2);
+            if (ptr1->trigger.on_trigger_stay) {
+                ptr1->trigger.on_trigger_stay(ptr1, ptr2);
+            }
+        }
+
+        if (inBody1.GetObjectLayer() == Layers::CHARACTER_GHOST && inBody2.GetObjectLayer() == Layers::TRIGGER) {
+            entity* ptr1 = reinterpret_cast<entity*>(inBody1.GetUserData());
+            entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
+
+            if (!ptr1 || !ptr2)
+                return;
+
+            if (ptr2->trigger.on_trigger_stay) {
+                ptr2->trigger.on_trigger_stay(ptr2, ptr1);
             }
         }
 	}
@@ -196,13 +208,8 @@ void physics_init()
 
     /// @note(ame): Initialize all the materials
     physics_materials::LevelMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Level", JPH::Color::sGreen));
-    physics_materials::LevelMaterial->AddRef();
-
     physics_materials::CharacterMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Character", JPH::Color::sRed));
-    physics_materials::CharacterMaterial->AddRef();
-
     physics_materials::TriggerMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Trigger", JPH::Color::sYellow));
-    physics_materials::TriggerMaterial->AddRef();
 
     JPH::PhysicsMaterial::sDefault = physics_materials::LevelMaterial;
 
@@ -313,6 +320,11 @@ void physics_exit()
     JPH::Factory::sInstance = nullptr;
 }
 
+void physics_clear_characters()
+{
+    physics.characters.clear();
+}
+
 void physics_body_init(physics_body *body, physics_shape *shape, glm::vec3 position, bool is_static, void *user_data)
 {
     body->shape = shape;
@@ -346,6 +358,7 @@ glm::mat4 physics_body_get_transform(physics_body *body)
 
 void physics_body_free(physics_body *body)
 {
+    physics.body_interface->RemoveBody(body->body->GetID());
     delete body->shape;
 }
 
@@ -377,9 +390,33 @@ void physics_trigger_init(physics_trigger *trigger, glm::vec3 position, glm::vec
     trigger->body->SetUserData(reinterpret_cast<u64>(user_data));
 }
 
+glm::vec3 physics_trigger_get_position(physics_trigger *trigger)
+{
+    JPH::Vec3 pos = physics.body_interface->GetPosition(trigger->body->GetID());
+    return glm::vec3(pos.GetX(), pos.GetY(), pos.GetZ());
+}
+
+void physics_trigger_set_position(physics_trigger *trigger, glm::vec3 position)
+{
+    trigger->position = position;
+    physics.body_interface->SetPosition(trigger->body->GetID(), JPH::Vec3(position.x, position.y, position.z), JPH::EActivation::Activate);
+}
+
+glm::vec3 physics_trigger_get_rotation(physics_trigger *trigger)
+{
+    JPH::Vec3 euler = physics.body_interface->GetRotation(trigger->body->GetID()).GetEulerAngles();
+    return glm::vec3(euler.GetX(), euler.GetY(), euler.GetZ());
+}
+
+void physics_trigger_set_rotation(physics_trigger *trigger, glm::vec3 euler)
+{
+    JPH::Quat quat = JPH::Quat::sEulerAngles(JPH::Vec3(euler.x, euler.y, euler.z));
+    physics.body_interface->SetRotation(trigger->body->GetID(), quat, JPH::EActivation::Activate);
+}
+
 void physics_trigger_free(physics_trigger *trigger)
 {
-    trigger->shape->Release();
+    physics.body_interface->RemoveBody(trigger->body->GetID());
 }
 
 void physics_character_init(physics_character *c, physics_shape *shape, glm::vec3 position, void *user_data)
@@ -427,9 +464,14 @@ glm::vec3 physics_character_get_position(physics_character *c)
     return glm::vec3(pos.GetX(), pos.GetY(), pos.GetZ());
 }
 
+void physics_character_set_position(physics_character *c, glm::vec3 p)
+{
+    physics.body_interface->SetPosition(c->body_index, JPH::Vec3(p.x, p.y, p.z), JPH::EActivation::Activate);
+    c->character->SetPosition(JPH::Vec3(p.x, p.y, p.z));
+}
+
 void physics_character_free(physics_character *c)
 {
-    c->character->Release();
+    physics.body_interface->RemoveBody(c->body_index);
     delete c->shape;
-    physics.characters.erase(std::find(physics.characters.begin(), physics.characters.end(), c));
 }

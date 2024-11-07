@@ -62,16 +62,10 @@ std::string fs_cachepath(const std::string& path)
 
 i32 fs_filesize(const std::string& path)
 {
-    i32 result = 0;
-
-    HANDLE handle = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (!handle) {
-        throw_error("File does not exist!");
+    struct stat s;
+    if (stat(path.c_str(), &s) == -1)
         return 0;
-    }
-    result = ::GetFileSize(handle, nullptr);
-    CloseHandle(handle);
-    return result;
+    return s.st_size;
 }
 
 std::string fs_readtext(const std::string& path)
@@ -114,6 +108,29 @@ void fs_getfiletime(const std::string& path, u32& low, u32& high)
 
     low = temp.dwLowDateTime;
     high = temp.dwHighDateTime;
+}
+
+nlohmann::json fs_loadjson(const std::string& path)
+{
+    std::ifstream stream(path);
+    if (!stream.is_open()) {
+        log("Failed to load json file {}", path.c_str());
+        return nlohmann::json::parse("{}");
+    }
+    nlohmann::json document = nlohmann::json::parse(stream);
+    stream.close();
+    return document;
+}
+
+void fs_writejson(const std::string& path, const nlohmann::json& json)
+{
+    std::ofstream stream(path);
+    if (!stream.is_open()) {
+        log("Failed to write json file %s", path.c_str());
+        return;
+    }
+    stream << json.dump(4) << std::endl;
+    stream.close();
 }
 
 void file_watch_start(file_watch *watch, const std::string& path)

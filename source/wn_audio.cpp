@@ -22,6 +22,9 @@ void audio_init()
     }
 
     log("[audio] initialized fmod");
+
+    audio_source_load(&audio.door_open, "assets/sfx/door_open.wav");
+    audio_source_load(&audio.door_close, "assets/sfx/door_close.wav");
 }
 
 void audio_update()
@@ -34,6 +37,8 @@ void audio_update()
 
 void audio_exit()
 {
+    audio_source_free(&audio.door_close);
+    audio_source_free(&audio.door_open);
     audio.system->release();
 }
 
@@ -53,7 +58,7 @@ void audio_source_play(audio_source *source)
     if (result != FMOD_RESULT::FMOD_OK) {
         throw_error("Failed to play audio source!");
     }
-    source->channel->setVolume(0.2f);
+    source->channel->setVolume(1.0f);
 }
 
 void audio_source_free(audio_source *source)

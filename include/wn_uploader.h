@@ -15,6 +15,7 @@
 struct upload_job
 {
     /// @todo(ame): support geometry
+    std::string path;
     uncompressed_bitmap bitmap;
     texture* output_tex;
 };

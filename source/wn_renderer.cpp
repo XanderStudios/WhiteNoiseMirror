@@ -112,7 +112,7 @@ void forward_init(u32 width, u32 height)
     texture_init(&renderer.forward.depth_buffer, width, height, DXGI_FORMAT_D32_FLOAT, TEXTURE_DSV);
     texture_init(&renderer.forward.color_buffer, width, height, DXGI_FORMAT_R32G32B32A32_FLOAT, TEXTURE_RTV);
 
-    sampler_init(&renderer.forward.texture_sampler, SamplerAddress_Wrap, SamplerFilter_Linear);
+    sampler_init(&renderer.forward.texture_sampler, SamplerAddress_Wrap, SamplerFilter_Linear, true);
 
     renderer.forward.pipeline.entries = { RootSignatureEntry_PushConstants, RootSignatureEntry_CBV, RootSignatureEntry_CBV, RootSignatureEntry_SRV, RootSignatureEntry_Sampler };
     renderer.forward.pipeline.push_constant_size = sizeof(glm::mat4) * 2 + sizeof(glm::vec4);

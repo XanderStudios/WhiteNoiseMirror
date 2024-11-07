@@ -34,7 +34,6 @@ struct gltf_vertex
 struct gltf_texture
 {
     resource* handle = nullptr;
-    tvc_entry* view = nullptr;
 };
 
 struct gltf_material
@@ -75,6 +74,9 @@ struct gltf_model
     std::vector<gltf_material> materials;
     std::unordered_map<std::string, gltf_texture> textures;
     u32 physics_counter = 0;
+
+    command_buffer model_cmd;
+    std::vector<buffer*> staging;
 
     u32 vtx_count;
     u32 idx_count;

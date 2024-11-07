@@ -65,8 +65,16 @@ struct physics_shape
 {
     RigidbodyType rb_type;
     JPH::Ref<JPH::PhysicsMaterial> material = nullptr;
+    JPH::Ref<JPH::Shape> shape;
 
-    virtual JPH::Ref<JPH::Shape> get_shape() = 0;
+    ~physics_shape()
+    {
+    }
+
+    virtual JPH::Ref<JPH::Shape> get_shape()
+    {
+        return shape;
+    }
 
     void save_shape(const std::string& path) {
         std::ofstream stream(path, std::ios::binary);
@@ -88,9 +96,7 @@ struct box_shape : public physics_shape
     : size(s) {
         material = m;
         rb_type = RigidbodyType_Box;
-    } 
 
-    JPH::Ref<JPH::Shape> get_shape() {
         JPH::ShapeSettings::ShapeResult result;
 
         JPH::BoxShapeSettings settings(JPH::Vec3(size.x, size.y, size.z), 0.05f, material);
@@ -99,8 +105,8 @@ struct box_shape : public physics_shape
             log("%s", result.GetError().c_str());
             throw_error("Somehow failed to create a Jolt shape, lol");
         }
-        return result.Get();
-    }
+        shape = result.Get();
+    } 
 };
 
 struct capsule_shape : public physics_shape
@@ -112,9 +118,7 @@ struct capsule_shape : public physics_shape
     : radius(r), height(h) {
         material = m;
         rb_type = RigidbodyType_Capsule;
-    }
 
-    JPH::Ref<JPH::Shape> get_shape() {
         JPH::ShapeSettings::ShapeResult result;
 
         JPH::CapsuleShapeSettings settings(height / 2.0f, radius, material);
@@ -123,7 +127,7 @@ struct capsule_shape : public physics_shape
             log("%s", result.GetError().c_str());
             throw_error("Somehow failed to create a Jolt shape, lol");
         }
-        return result.Get();
+        shape = result.Get();
     }
 };
 
@@ -135,9 +139,7 @@ struct mesh_shape : public physics_shape
         : triangles(v) {
         material = m;
         rb_type = RigidbodyType_Mesh;
-    }
-
-    JPH::Ref<JPH::Shape> get_shape() {
+    
         JPH::ShapeSettings::ShapeResult result;
 
         JPH::PhysicsMaterialList list;
@@ -151,7 +153,7 @@ struct mesh_shape : public physics_shape
             log("%s", result.GetError().c_str());
             throw_error("Somehow failed to create a Jolt shape, lol");
         }
-        return result.Get();
+        shape = result.Get();
     }
 };
 
@@ -163,9 +165,7 @@ struct convex_hull_shape : public physics_shape
         : points(v) {
         material = m;
         rb_type = RigidbodyType_ConvexHull;
-    }
-
-    JPH::Ref<JPH::Shape> get_shape() {
+    
         JPH::ShapeSettings::ShapeResult result;
     
         JPH::ConvexHullShapeSettings settings(points, 0.05f, material);
@@ -174,7 +174,7 @@ struct convex_hull_shape : public physics_shape
             log("%s", result.GetError().c_str());
             throw_error("Somehow failed to create a Jolt shape, lol");
         }
-        return result.Get();
+        shape = result.Get();
     }
 };
 
@@ -186,9 +186,7 @@ struct cached_shape : public physics_shape
         : shape_path(path)
     {
         rb_type = RigidbodyType_ConvexHull;
-    }
-
-    JPH::Ref<JPH::Shape> get_shape() {
+    
         std::ifstream stream(shape_path, std::ios_base::binary);
 
         JPH::StreamInWrapper stream_in(stream);
@@ -197,7 +195,7 @@ struct cached_shape : public physics_shape
             log("%s", result.GetError().c_str());
             throw_error("Somehow failed to create a Jolt shape, lol");
         }
-        return result.Get();
+        shape = result.Get();
     }
 };
 
@@ -225,6 +223,7 @@ void physics_character_init(physics_character *c, physics_shape *shape, glm::vec
 void physics_character_move(physics_character *c, glm::vec3 velocity);
 glm::mat4 physics_character_get_transform(physics_character *c);
 glm::vec3 physics_character_get_position(physics_character *c);
+void physics_character_set_position(physics_character *c, glm::vec3 p);
 void physics_character_free(physics_character *c);
 
 /// @note(ame): trigger
@@ -238,12 +237,15 @@ struct physics_trigger
     JPH::Ref<JPH::Shape> shape;
     
     /// @todo(ame): OnTriggerExit
-    std::function<void(entity *collider)> on_trigger_enter = {};
-    std::function<void(entity *collider)> on_trigger_stay = {};
+    std::function<void(entity* collider, entity *collided)> on_trigger_enter = {};
+    std::function<void(entity* collider, entity *collided)> on_trigger_stay = {};
 };
 
 void physics_trigger_init(physics_trigger *trigger, glm::vec3 position = glm::vec3(0.0f), glm::vec3 size = glm::vec3(0.0f), void *user_data = nullptr);
-bool physics_trigger_is_inside(physics_trigger *trigger, physics_body *body);
+glm::vec3 physics_trigger_get_position(physics_trigger *trigger);
+void physics_trigger_set_position(physics_trigger *trigger, glm::vec3 position);
+glm::vec3 physics_trigger_get_rotation(physics_trigger *trigger);
+void physics_trigger_set_rotation(physics_trigger *trigger, glm::vec3 q);
 void physics_trigger_free(physics_trigger *trigger);
 
 /// @note(ame): SYSTEM
@@ -271,4 +273,5 @@ void physics_init();
 void physics_attach_debug_renderer(debug_renderer *dbg);
 void physics_draw();
 void physics_update();
+void physics_clear_characters();
 void physics_exit();

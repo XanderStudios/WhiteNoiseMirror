@@ -7,7 +7,7 @@
 #include <sstream>
 
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "wn_gltf.h"
@@ -15,6 +15,8 @@
 #include "wn_video.h"
 #include "wn_resource_cache.h"
 #include "wn_util.h"
+
+#define CACHE_PHYSICS 1
 
 void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_node *node)
 {
@@ -89,6 +91,7 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
 
     /// @todo(ame): le physics
     if (model->gen_collisions) {
+#if CACHE_PHYSICS
         std::stringstream ss;
         ss << ".cache/" << wn_hash(model->path.c_str(), model->path.size(), 1000) << "_" << std::to_string(model->physics_counter) << ".wnp";
         if (fs_exists(ss.str())) {
@@ -101,13 +104,22 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
             shape->save_shape(ss.str());
             physics_body_init(&out.body, shape, glm::vec3(0.0f), true);
         }
+#else
+        physics_shape* shape = new convex_hull_shape(points, physics_materials::LevelMaterial);
+        physics_body_init(&out.body, shape, glm::vec3(0.0f), true);
+#endif
     }
     model->physics_counter++;
 
     /// @note(ame): create buffers
-    buffer_init(&out.vertex_buffer, vertices.size() * sizeof(gltf_vertex), sizeof(gltf_vertex), BufferType_Vertex);
-    buffer_init(&out.index_buffer, indices.size() * sizeof(u32), sizeof(u32), BufferType_Index);
+    buffer_init(&out.vertex_buffer, vertices.size() * sizeof(gltf_vertex), sizeof(gltf_vertex), BufferType_Vertex, false, node->name + " Vertex Buffer");
+    buffer_init(&out.index_buffer, indices.size() * sizeof(u32), sizeof(u32), BufferType_Index, false, node->name + " Index Buffer");
 
+    buffer* vertex_staging = new buffer;
+    buffer_init(vertex_staging, out.vertex_buffer.size, 0, BufferType_Copy, false, node->name + " Staging Vertex");
+
+    buffer* index_staging = new buffer;
+    buffer_init(index_staging, out.index_buffer.size, 0, BufferType_Copy, false, node->name + " Staging Index");
     /// @note(ame): create textures
     cgltf_material *material = primitive->material;
     gltf_material out_material = {};
@@ -115,12 +127,16 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
 
     /// @note(ame): loading + uploading
     void *data;
-    command_buffer cmd_buf = {};
-    command_buffer_init(&cmd_buf, D3D12_COMMAND_LIST_TYPE_DIRECT, false);
-    command_buffer_begin(&cmd_buf, false);
+    buffer_map(vertex_staging, 0, 0, &data);
+    memcpy(data, vertices.data(), out.vertex_buffer.size);
+    command_buffer_copy_buffer_to_buffer(&model->model_cmd, &out.vertex_buffer, vertex_staging);
+    buffer_unmap(vertex_staging);
 
-    uncompressed_bitmap albedo_bitmap = {};
-    buffer albedo_staging = {};
+    buffer_map(index_staging, 0, 0, &data);
+    memcpy(data, indices.data(), out.index_buffer.size);
+    command_buffer_copy_buffer_to_buffer(&model->model_cmd, &out.index_buffer, index_staging);
+    buffer_unmap(index_staging);
+
     if (material && material->pbr_metallic_roughness.base_color_texture.texture) {
         std::string path = model->directory + '/' + std::string(material->pbr_metallic_roughness.base_color_texture.texture->image->uri);
         if (model->textures.count(path) > 0) {
@@ -136,29 +152,8 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
         }
     }
 
-    /// @note(ame): vertex and index buffers
-    buffer vertex_staging = {};
-    buffer_init(&vertex_staging, out.vertex_buffer.size, 0, BufferType_Copy, false);
-    buffer_map(&vertex_staging, 0, 0, &data);
-    memcpy(data, vertices.data(), out.vertex_buffer.size);
-    command_buffer_copy_buffer_to_buffer(&cmd_buf, &out.vertex_buffer, &vertex_staging);
-    buffer_unmap(&vertex_staging);
-
-    buffer index_staging = {};
-    buffer_init(&index_staging, out.index_buffer.size, 0, BufferType_Copy, false);
-    buffer_map(&index_staging, 0, 0, &data);
-    memcpy(data, indices.data(), out.index_buffer.size);
-    command_buffer_copy_buffer_to_buffer(&cmd_buf, &out.index_buffer, &index_staging);
-    buffer_unmap(&index_staging);
-
-    command_buffer_end(&cmd_buf);
-    command_queue_submit(&video.graphics_queue, { &cmd_buf });
-    video_wait();
-
-    buffer_free(&vertex_staging);
-    buffer_free(&index_staging);
-    buffer_free(&albedo_staging);
-    command_buffer_free(&cmd_buf);
+    model->staging.push_back(vertex_staging);
+    model->staging.push_back(index_staging);
 
     model->vtx_count += out.vtx_count;
     model->idx_count += out.idx_count;
@@ -203,7 +198,7 @@ void gltf_process_node(gltf_model *model, cgltf_node *node, gltf_node *mnode)
     }
 
     for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
-        buffer_init(&mnode->model_buffer[i], 512, 0, BufferType_Constant);
+        buffer_init(&mnode->model_buffer[i], 512, 0, BufferType_Constant, false, node->name + std::string(" CBV") + std::to_string(i));
         buffer_build_constant(&mnode->model_buffer[i]);
     }
 
@@ -233,6 +228,9 @@ void gltf_model_load(gltf_model *model, const std::string& path, bool generate_c
     }
     cgltf_scene *scene = data->scene;
 
+    command_buffer_init(&model->model_cmd, D3D12_COMMAND_LIST_TYPE_DIRECT, false);
+    command_buffer_begin(&model->model_cmd, false);
+
     /// @note(ame): Process animations
     /// @todo(ame): Process animations
 
@@ -249,6 +247,17 @@ void gltf_model_load(gltf_model *model, const std::string& path, bool generate_c
 
         gltf_process_node(model, scene->nodes[i], model->root->children[i]);
     }
+    
+    command_buffer_end(&model->model_cmd);
+    command_queue_submit(&video.graphics_queue, { &model->model_cmd });
+    video_wait();
+
+    for (auto& buffer : model->staging) {
+        buffer_free(buffer);
+        delete buffer;
+    }
+    command_buffer_free(&model->model_cmd);
+    
     cgltf_free(data);
 }
 
@@ -258,12 +267,6 @@ void gltf_free_nodes(gltf_model *model, gltf_node *node)
         return;
     }
 
-    for (gltf_node *child : node->children) {
-        gltf_free_nodes(model, child);
-    }
-
-    node->children.clear();
-
     for (auto& primitive : node->primitives) {
         if (model->gen_collisions) {
             physics_body_free(&primitive.body);
@@ -272,8 +275,15 @@ void gltf_free_nodes(gltf_model *model, gltf_node *node)
         buffer_free(&primitive.vertex_buffer);
     }
     for (i32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
-        buffer_free(&node->model_buffer[i]);
+        if (node->model_buffer[i].size > 0) {
+            buffer_free(&node->model_buffer[i]);
+        }
     }
+
+    for (gltf_node *child : node->children) {
+        gltf_free_nodes(model, child);
+    }
+    node->children.clear();
 
     delete node;
 }
@@ -284,7 +294,6 @@ void gltf_model_free(gltf_model *model)
 
     model->materials.clear();
     for (auto& texture : model->textures) {
-        tvc_release_view(texture.second.view);
         resource_cache_give_back(texture.second.handle);
     }
 }

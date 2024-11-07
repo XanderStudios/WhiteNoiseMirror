@@ -39,7 +39,7 @@ SamplerState Sampler : register(s4);
 
 float4 Main(VertexOut vert) : SV_TARGET
 {
-    float2 uv = float2(vert.uv.x, 1.0 - vert.uv.y);
+    float2 uv = float2(vert.uv.x, vert.uv.y);
     
     float4 albedo = Albedo.Sample(Sampler, uv);
     albedo.xyz = pow(albedo.xyz, 2.2);
