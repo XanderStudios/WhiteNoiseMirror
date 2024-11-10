@@ -12,6 +12,7 @@ resource_cache global_cache;
 void resource_cache_init()
 {
     global_cache.resources = {};
+    log("[resource_cache] intialized resource cache");
 }
 
 resource *resource_cache_get(const std::string& path, resource_type type, bool gen_collisions)

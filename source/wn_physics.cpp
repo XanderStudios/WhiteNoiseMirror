@@ -207,7 +207,7 @@ void physics_init()
     timer_init(&physics.physics_timer);
 
     /// @note(ame): Initialize all the materials
-    physics_materials::LevelMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Level", JPH::Color::sGreen));
+    physics_materials::LevelMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Level", JPH::Color::sWhite));
     physics_materials::CharacterMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Character", JPH::Color::sRed));
     physics_materials::TriggerMaterial = JPH::Ref<JPH::PhysicsMaterial>(new JPH::PhysicsMaterialSimple("Trigger", JPH::Color::sYellow));
 
@@ -224,11 +224,9 @@ void physics_attach_debug_renderer(debug_renderer *dbg)
 void physics_draw()
 {
     JPH::BodyManager::DrawSettings settings = {};
-    settings.mDrawBoundingBox = true;
-    settings.mDrawShapeColor = JPH::BodyManager::EShapeColor::ShapeTypeColor;
+    settings.mDrawShapeColor = JPH::BodyManager::EShapeColor::MaterialColor;
 
     physics.system->DrawBodies(settings, JPH::DebugRenderer::sInstance);
-    physics.system->DrawConstraints(JPH::DebugRenderer::sInstance);
 }
 
 void physics_update()
@@ -362,12 +360,13 @@ void physics_body_free(physics_body *body)
     delete body->shape;
 }
 
-void physics_trigger_init(physics_trigger *trigger, glm::vec3 position, glm::vec3 size, void *user_data)
+void physics_trigger_init(physics_trigger *trigger, glm::vec3 position, glm::vec3 size, glm::quat q, void *user_data)
 {
     trigger->position = position;
     trigger->size = size;
+    trigger->rotation = q;
 
-    JPH::BoxShapeSettings box_settings(JPH::Vec3(size.x, size.y, size.z));
+    JPH::BoxShapeSettings box_settings(JPH::Vec3(size.x, size.y, size.z), 0.05, physics_materials::TriggerMaterial);
 
     JPH::ShapeSettings::ShapeResult result = box_settings.Create();
     if (result.HasError()) {
@@ -378,7 +377,7 @@ void physics_trigger_init(physics_trigger *trigger, glm::vec3 position, glm::vec
 
     JPH::BodyCreationSettings body_settings(trigger->shape,
                                             JPH::Vec3(position.x, position.y, position.z),
-                                            JPH::Quat::sIdentity(),
+                                            JPH::Quat(q.x, q.y, q.z, q.w),
                                             JPH::EMotionType::Kinematic,
                                             Layers::TRIGGER);
     body_settings.mIsSensor = true;
@@ -411,6 +410,7 @@ glm::vec3 physics_trigger_get_rotation(physics_trigger *trigger)
 void physics_trigger_set_rotation(physics_trigger *trigger, glm::vec3 euler)
 {
     JPH::Quat quat = JPH::Quat::sEulerAngles(JPH::Vec3(euler.x, euler.y, euler.z));
+    trigger->rotation = glm::quat(quat.GetW(), quat.GetX(), quat.GetY(), quat.GetZ());
     physics.body_interface->SetRotation(trigger->body->GetID(), quat, JPH::EActivation::Activate);
 }
 
@@ -459,8 +459,7 @@ glm::mat4 physics_character_get_transform(physics_character *c)
 
 glm::vec3 physics_character_get_position(physics_character *c)
 {
-    JPH::Vec3 pos = physics.body_interface->GetPosition(c->body_index);
-
+    JPH::Vec3 pos = c->character->GetPosition();
     return glm::vec3(pos.GetX(), pos.GetY(), pos.GetZ());
 }
 
@@ -474,4 +473,90 @@ void physics_character_free(physics_character *c)
 {
     physics.body_interface->RemoveBody(c->body_index);
     delete c->shape;
+}
+
+ray_result physics_body_trace_ray(physics_body *body, glm::vec3 start, glm::vec3 end)
+{
+    ray_result result;
+
+    glm::vec3 direction = end - start;
+
+    JPH::RayCast ray;
+    ray.mOrigin = JPH::Vec3(start.x, start.y, start.z);
+    ray.mDirection = JPH::Vec3(direction.x, start.y, start.z);
+
+    JPH::RayCastResult hit;
+    result.hit = body->shape->get_shape()->CastRay(ray, JPH::SubShapeIDCreator(), hit);
+    result.point = start + hit.mFraction * (end - start);
+    result.t = hit.mFraction;
+    return result;
+}
+
+struct skip_character_filter : JPH::ObjectLayerFilter
+{
+public:
+    bool ShouldCollide(JPH::ObjectLayer inLayer) const
+    {
+        if (inLayer == Layers::CHARACTER_GHOST || inLayer == Layers::TRIGGER)
+            return false;
+        return true;
+    }
+};
+
+ray_result physics_character_trace_ray(physics_character *c, glm::vec3 start, glm::vec3 end)
+{
+    JPH::Vec3 from = JPH::Vec3(start.x, start.y, start.z);
+	JPH::Vec3 dir = JPH::Vec3(end.x - start.x, end.y - start.y, end.z - start.z);
+
+    JPH::RRayCast ray = JPH::RRayCast(from, dir);
+	JPH::ClosestHitCollisionCollector<JPH::CastRayCollector> collector;
+
+    JPH::RayCastResult result;
+    skip_character_filter filter;
+
+    physics.system->GetNarrowPhaseQuery().CastRay(ray, JPH::RayCastSettings(), collector, {}, filter);
+
+    ray_result rresult = {};
+    if (collector.HadHit()) {
+        rresult.hit = true;
+        JPH::BroadPhaseCastResult result = collector.mHit;
+    
+        const float hit_frac = result.mFraction;
+		const JPH::Vec3& hit_pos = ray.GetPointOnRay(result.mFraction);
+
+        rresult.point = glm::vec3(hit_pos.GetX(), hit_pos.GetY(), hit_pos.GetZ());
+        rresult.t = hit_frac;
+    } else {
+        rresult.hit = false;
+    }
+    return rresult;
+}
+
+ray_result physics_character_trace_ray_dir(physics_character *c, glm::vec3 start, glm::vec3 dir)
+{
+    JPH::Vec3 from = JPH::Vec3(start.x, start.y, start.z);
+	JPH::Vec3 jdir = JPH::Vec3(dir.x, dir.y, dir.z);
+
+    JPH::RayCast ray = JPH::RayCast(from, jdir);
+	JPH::ClosestHitCollisionCollector<JPH::RayCastBodyCollector> collector;
+
+    JPH::RayCastResult result;
+    skip_character_filter filter;
+
+    physics.system->GetBroadPhaseQuery().CastRay(ray, collector, {}, filter);
+
+    ray_result rresult = {};
+    if (collector.HadHit()) {
+        rresult.hit = true;
+        JPH::BroadPhaseCastResult result = collector.mHit;
+    
+        const float hit_frac = result.mFraction;
+		const JPH::Vec3& hit_pos = ray.GetPointOnRay(result.mFraction);
+
+        rresult.point = glm::vec3(hit_pos.GetX(), hit_pos.GetY(), hit_pos.GetZ());
+        rresult.t = hit_frac;
+    } else {
+        rresult.hit = false;
+    }
+    return rresult;
 }

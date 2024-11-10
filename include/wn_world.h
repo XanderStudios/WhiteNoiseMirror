@@ -94,8 +94,8 @@ void game_world_init(game_world *world, game_world_info *info);
 void game_world_load(game_world *world, const std::string& path);
 void game_world_save(game_world *world, const std::string& path = "");
 void game_world_remove_entity(game_world *world, entity* e);
-entity* game_world_add_trigger(game_world *world, glm::vec3 position, glm::vec3 size);
-void game_world_update(game_world *world);
+entity* game_world_add_trigger(game_world *world, glm::vec3 position, glm::vec3 size, glm::quat q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+void game_world_update(game_world *world, f32 dt);
 void game_world_free(game_world *world);
 
 /// @todo(ame): Serialization

@@ -26,11 +26,9 @@ struct debug_camera
     f32 yaw;
     f32 pitch;
 
-    glm::ivec2 mouse_pos;
     glm::mat4 view;
     glm::mat4 projection;
 };
 
 void debug_camera_init(debug_camera *camera);
-void debug_camera_update(debug_camera *camera);
-void debug_camera_input(debug_camera *camera, f32 dt);
+void debug_camera_update(debug_camera *camera, f32 dt);

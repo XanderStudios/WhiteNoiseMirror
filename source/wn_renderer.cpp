@@ -266,6 +266,6 @@ void debug_renderer_render(game_render_info *info)
 {
     if (info->render_debug) {
         physics_draw();
-        renderer.debug->flush(info->frame, info->current_view, info->current_projection);
     }
+    renderer.debug->flush(info->frame, info->current_view, info->current_projection);
 }

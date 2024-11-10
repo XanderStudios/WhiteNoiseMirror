@@ -11,6 +11,7 @@
 #include "wn_filesystem.h"
 #include "wn_util.h"
 #include "wn_notification.h"
+#include "wn_input.h"
 
 void game_world_init(game_world *world, game_world_info *info)
 {
@@ -56,7 +57,13 @@ void game_world_load(game_world *world, const std::string& path)
         trigger_size.y = trigger["size"][1].template get<float>();
         trigger_size.z = trigger["size"][2].template get<float>();
 
-        entity* new_entity = game_world_add_trigger(world, trigger_position, trigger_size);
+        glm::quat rotation;
+        rotation.x = trigger["rotation"][0].template get<float>();
+        rotation.y = trigger["rotation"][1].template get<float>();
+        rotation.z = trigger["rotation"][2].template get<float>();
+        rotation.w = trigger["rotation"][3].template get<float>();
+
+        entity* new_entity = game_world_add_trigger(world, trigger_position, trigger_size, rotation);
 
         std::string type = trigger["type"].template get<std::string>();
         if (type.compare("transition") == 0) {
@@ -83,7 +90,7 @@ void game_world_remove_entity(game_world *world, entity* e)
     }
 }
 
-entity* game_world_add_trigger(game_world *world, glm::vec3 position, glm::vec3 size)
+entity* game_world_add_trigger(game_world *world, glm::vec3 position, glm::vec3 size, glm::quat q)
 {
     entity* new_entity = new entity;
     new_entity->type = EntityType_Trigger;
@@ -92,10 +99,10 @@ entity* game_world_add_trigger(game_world *world, glm::vec3 position, glm::vec3 
     new_entity->has_trigger = true;
     new_entity->trigger_id = new_entity->id;
 
-    physics_trigger_init(&new_entity->trigger, position, size, new_entity);
+    physics_trigger_init(&new_entity->trigger, position, size, q, new_entity);
 
     auto function = [&](entity* trigger, entity *e) {
-        if (ImGui::IsKeyDown(ImGuiKey_Space)) {
+        if (input_get_mapping_value("Interact", false)) {
             notification_payload payload;
             payload.type = NotificationType_LevelChange;
             payload.level_change.level_path = trigger->trigger_transition;
@@ -140,6 +147,11 @@ void game_world_save(game_world *world, const std::string& path)
             entity_root["size"][1] = entity->trigger.size.y;
             entity_root["size"][2] = entity->trigger.size.z;
 
+            entity_root["rotation"][0] = entity->trigger.rotation.x;
+            entity_root["rotation"][1] = entity->trigger.rotation.y;
+            entity_root["rotation"][2] = entity->trigger.rotation.z;
+            entity_root["rotation"][3] = entity->trigger.rotation.w;
+
             entity_root["type"] = "none";
             if (entity->t_type == TriggerType_Transition) {
                 entity_root["type"] = "transition";
@@ -153,9 +165,9 @@ void game_world_save(game_world *world, const std::string& path)
     fs_writejson(save_path, root);    
 }
 
-void game_world_update(game_world *world)
+void game_world_update(game_world *world, f32 dt)
 {
-    player_update(&world->player);
+    player_update(&world->player, dt);
 }
 
 void game_world_free(game_world *world)

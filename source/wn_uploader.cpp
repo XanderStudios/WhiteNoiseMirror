@@ -35,7 +35,7 @@ void uploader_ctx_flush()
     for (auto& job : uploader.jobs) {
         buffer staging = {};
 
-        texture_init(job.output_tex, job.bitmap.width, job.bitmap.height, job.bitmap.compressed ? DXGI_FORMAT_BC7_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM, 0, job.bitmap.levels, false, job.path);
+        texture_init(job.output_tex, job.bitmap.width, job.bitmap.height, job.bitmap.compressed ? DXGI_FORMAT_BC7_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, 0, job.bitmap.levels, false, job.path);
         u64 texture_size = texture_get_size(job.output_tex);
         
         /// @note(ame): this is very ugly and i should not have any D3D12 code in here, but bare with me, it works, so I'm just not gonna touch it lol

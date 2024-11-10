@@ -11,7 +11,6 @@
 #include <SDL3/SDL.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui.h>
-#include <imguizmo/ImGuizmo.h>
 
 #include "wn_video.h"
 #include "wn_output.h"
@@ -27,11 +26,14 @@
 #include "wn_world.h"
 #include "wn_renderer.h"
 #include "wn_steam.h"
-#include "wn_gamepad.h"
 #include "wn_resource_cache.h"
 #include "wn_uploader.h"
 #include "wn_notification.h"
 #include "wn_util.h"
+#include "wn_editor.h"
+#include "wn_player.h"
+#include "wn_input.h"
+#include "wn_discord.h"
 
 #define WINDOW_WIDTH 1600
 #define WINDOW_HEIGHT 900
@@ -40,7 +42,9 @@ notification_handler noti_handler;
 
 int main(void)
 {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
+    steam_init();
+
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         throw_error("Failed to initialize SDL3!");
     }
 
@@ -49,19 +53,30 @@ int main(void)
         throw_error("Failed to create SDL3 window");
     }
 
-    /// @note(ame): pre-game launch
+    /// @note(ame): initialize system
     bitmap_compress_recursive("assets/");
-
-    /// @note(ame): initialize systems
-
-    // steam_init();
+    discord_init();
     video_init(window);
     resource_cache_init();
     audio_init();
     physics_init();
     script_system_init();
     game_renderer_init(WINDOW_WIDTH, WINDOW_HEIGHT);
-    gamepad_init();
+    input_init();
+
+    /// @note(ame): init mappings
+    input_add_mapping_binding_key("Forward", SDLK_Z);
+    input_add_mapping_binding_key("Backward", SDLK_S);
+    input_add_mapping_binding_key("TurnLeft", SDLK_Q);
+    input_add_mapping_binding_key("TurnRight", SDLK_D);
+    input_add_mapping_binding_axis("ForwardBackward", AXIS_LEFT_STICK_Y);
+    input_add_mapping_binding_axis("RotateLeftRight", AXIS_RIGHT_STICK_X);
+    input_add_mapping_binding_axis("RotateLeftRight", AXIS_LEFT_STICK_X);
+    input_add_mapping_binding_axis("RotateUpDown", AXIS_RIGHT_STICK_Y);
+    input_add_mapping_binding_key("Interact", SDLK_SPACE);
+    input_add_mapping_binding_gamepad("Interact", SDL_GAMEPAD_BUTTON_SOUTH);
+    input_add_mapping_binding_key("Sprint", SDLK_LSHIFT);
+    input_add_mapping_binding_gamepad("Sprint", SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
 
     /// @note(ame): asset loading
     game_world world;
@@ -82,10 +97,6 @@ int main(void)
     bool lit_scene = false;
     bool vsync = true;
 
-    bool select_player = false;
-    entity* selected_trigger = nullptr;
-    ImGuizmo::OPERATION operation = ImGuizmo::OPERATION::TRANSLATE;
-
     /// @note(ame): main loop
     bool exit = false;
     while (!exit) {
@@ -93,12 +104,11 @@ int main(void)
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT)
                 exit = true;
-
             ImGui_ImplSDL3_ProcessEvent(&event);
-            gamepad_update(&event);
+            input_update(&event);
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_F1, false)) {
+        if (input_is_key_pressed(SDLK_F1)) {
             editor_mode = !editor_mode;
         }
 
@@ -110,14 +120,24 @@ int main(void)
         // update camera
         camera.width = WINDOW_WIDTH;
         camera.height = WINDOW_HEIGHT;
-        debug_camera_update(&camera);
 
+        // input camera
+        ImGuiIO& io = ImGui::GetIO();
+
+        glm::mat4 view_to_use = glm::mat4(1.0f);
         // update systems
         if (!editor_mode) {
             audio_update();
             physics_update();
-            game_world_update(&world);
+            game_world_update(&world, dt);
+            view_to_use = player_get_view(&world.player);
+        } else {
+            if (!io.WantCaptureMouse && editor_mode)
+                debug_camera_update(&camera, dt);
+            view_to_use = camera.view;
         }
+
+        player_debug_draw(&world.player);
 
         // render world
         video_frame frame = video_begin();
@@ -125,10 +145,10 @@ int main(void)
 
         glm::vec3 player_pos = physics_character_get_position(&world.player.character);
         game_render_info render_info = {
-            camera.view, 
+            view_to_use, 
             camera.projection,
-            player_pos + glm::vec3(0.0f, 0.0f, 0.3f),
-            glm::vec3(0.0f, 0.0f, 1.0f),
+            player_pos + glm::vec3(0.0f, 0.0f, 0.5f),
+            player_get_forward(&world.player),
             WINDOW_WIDTH,
             WINDOW_HEIGHT,
             &world,
@@ -147,157 +167,18 @@ int main(void)
         /// @note(ame): Panel
         if (editor_mode) {
             /// @note(ame): World panel
-            ImGui::Begin("World");
+            ImGui::Begin("Renderer");
             if (ImGui::TreeNodeEx("Renderer", ImGuiTreeNodeFlags_Framed)) {
                 ImGui::Checkbox("Draw Mesh", &draw_mesh);
                 ImGui::Checkbox("Draw Skeleton", &draw_skeleton);
-                ImGui::Checkbox("Draw Debug", &draw_debug);
+                ImGui::Checkbox("Draw Bounding Boxes", &draw_debug);
                 ImGui::Checkbox("VSync", &vsync);
                 ImGui::Checkbox("Lit", &lit_scene);
                 ImGui::TreePop();
             }
-            if (ImGui::TreeNodeEx("Scene", ImGuiTreeNodeFlags_Framed)) {
-                ImGui::Checkbox("Edit Player", &select_player);
-                if (ImGui::Button("Save Start Position")) {
-                    world.start_position = player_pos;
-                }
-                ImGui::Separator();
-                if (ImGui::RadioButton("Translate", operation == ImGuizmo::OPERATION::TRANSLATE))
-                    operation = ImGuizmo::OPERATION::TRANSLATE;
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Rotate", operation == ImGuizmo::OPERATION::ROTATE))
-                    operation = ImGuizmo::OPERATION::ROTATE;
-                if (ImGui::TreeNodeEx("Triggers", ImGuiTreeNodeFlags_Framed)) {
-                    if (ImGui::Button("New Trigger")) {
-                        selected_trigger = game_world_add_trigger(&world, glm::vec3(0.0f), glm::vec3(1.0f));
-                    }
-                    if (selected_trigger) {
-                        if (ImGui::Button("Remove Selected")) {
-                            game_world_remove_entity(&world, selected_trigger);
-                            selected_trigger = nullptr;
-                        }
-                    }
-                    for (auto& entity : world.entities) {
-                        if (entity->type == EntityType_Trigger) {
-                            std::string name = "Trigger " + std::to_string(entity->trigger_id);
-                            if (ImGui::Selectable(name.c_str())) {
-                                selected_trigger = entity;
-                            }
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-                ImGui::Separator();
-                if (ImGui::Button("Save")) {
-                    game_world_save(&world);
-                }
-                ImGui::TreePop();
-            }
-            if (ImGui::TreeNodeEx("World Info", ImGuiTreeNodeFlags_Framed)) {
-                ImGui::Text("Player Position: (%.3f, %.3f, %.3f)", player_pos.x, player_pos.y, player_pos.z);
-                ImGui::TreePop();
-            }
             ImGui::End();
 
-            /// @todo(ame): Entity panel
-            ImGui::Begin("Selected Object");
-            if (selected_trigger) {
-                ImGui::Text("TRIGGER:");
-                
-                static const char* trigger_types[] = { "Not Precised", "Transition" };
-                ImGui::Combo("Trigger Type", (int*)&selected_trigger->t_type, trigger_types, 2, 2);
-            
-                if (selected_trigger->t_type == TriggerType_Transition) {
-                    char buffer[512];
-                    strcpy(buffer, selected_trigger->trigger_transition.c_str());
-                    ImGui::InputText("Level Path", buffer, 512);
-                    std::string wrapped_buffer = std::string(buffer);
-                    if (fs_exists(wrapped_buffer)) {
-                        selected_trigger->trigger_transition = std::string(buffer);
-                    } else {
-                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "%s doesn't exist", buffer);
-                    }
-                }
-            }
-            ImGui::End();
-
-            /// @note(ame): Guizmo context
-            ImGuiIO& io = ImGui::GetIO();
-            ImGui::SetNextWindowPos({0, 0});
-            ImGui::SetNextWindowSize({f32(WINDOW_WIDTH), f32(WINDOW_HEIGHT)});
-            ImGui::Begin("ImGuizmo Context", nullptr, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs);
-
-            ImGuizmo::SetOrthographic(false);
-            ImGuizmo::SetDrawlist();
-            ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
-            if (select_player) {
-                glm::mat4 matrix(1.0f);
-                glm::vec3 rot(0.0f);
-                glm::vec3 scale(1.0f);
-
-                ImGuizmo::RecomposeMatrixFromComponents(glm::value_ptr(player_pos),
-                                                        glm::value_ptr(rot),
-                                                        glm::value_ptr(scale),
-                                                        glm::value_ptr(matrix));
-
-                ImGuizmo::Manipulate(glm::value_ptr(render_info.current_view),
-                                     glm::value_ptr(render_info.current_projection),
-                                     ImGuizmo::OPERATION::TRANSLATE,
-                                     ImGuizmo::MODE::WORLD,
-                                     glm::value_ptr(matrix),
-                                     nullptr,
-                                     nullptr);
-
-                ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix),
-                                                      glm::value_ptr(player_pos),
-                                                      glm::value_ptr(rot),
-                                                      glm::value_ptr(scale));
-
-                physics_character_set_position(&world.player.character, player_pos);
-            }
-
-            if (selected_trigger) {
-                glm::mat4 matrix(1.0f);
-                glm::vec3 scale(1.0f);
-
-                glm::vec3 trigger_position = physics_trigger_get_position(&selected_trigger->trigger);
-                glm::vec3 trigger_rotation = physics_trigger_get_rotation(&selected_trigger->trigger);
-
-                /*
-                    Jolt gives euler angles in radians
-                    Convert it to euler degrees to send it for recomposition for ImGuizmo
-                    Get the euler degrees back
-                    Convert the euler degrees back to radians
-                    Convert the euler radians back to a quaternion to send to Jolt
-                */
-
-                trigger_rotation = glm::degrees(trigger_rotation);
-                ImGuizmo::RecomposeMatrixFromComponents(glm::value_ptr(trigger_position),
-                                                        glm::value_ptr(trigger_rotation),
-                                                        glm::value_ptr(scale),
-                                                        glm::value_ptr(matrix));
-
-                ImGuizmo::Manipulate(glm::value_ptr(render_info.current_view),
-                                     glm::value_ptr(render_info.current_projection),
-                                     operation,
-                                     ImGuizmo::MODE::WORLD,
-                                     glm::value_ptr(matrix),
-                                     nullptr,
-                                     nullptr);
-
-                ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix),
-                                                      glm::value_ptr(trigger_position),
-                                                      glm::value_ptr(trigger_rotation),
-                                                      glm::value_ptr(scale));
-                trigger_rotation = glm::radians(trigger_rotation);
-
-                physics_trigger_set_position(&selected_trigger->trigger, trigger_position);
-                physics_trigger_set_rotation(&selected_trigger->trigger, trigger_rotation);
-            }
-
-            ImGui::End();
+            editor_manipulate(&world, &render_info);
         }
 
         command_buffer_end_gui(frame.cmd_buffer);
@@ -314,10 +195,8 @@ int main(void)
         video_end(&frame);
         video_present(vsync);
 
-        // input camera
-        ImGuiIO& io = ImGui::GetIO();
-        if (!io.WantCaptureMouse)
-            debug_camera_input(&camera, dt);
+        // update input
+        input_post_frame();
 
         /// @note(ame): reload shaders
         game_renderer_rebuild();
@@ -336,7 +215,7 @@ int main(void)
                         world = temp;
                         
                         /// @note(ame): reset editor
-                        selected_trigger = nullptr;
+                        editor_reset();
                         
                         audio_source_play(&audio.door_close);
                         
@@ -346,21 +225,27 @@ int main(void)
                 noti_handler.notifications.clear();
             }
         }
+
+        //
+        discord_run_callbacks(editor_mode ? "DEBUG MODE" : "PLAY MODE", "On map " + world.name);
+        //
     }
 
     video_wait();
     game_world_free(&world);
     
-    gamepad_exit();
+    input_exit();
     game_renderer_free();
     script_system_exit();
     physics_exit();
     audio_exit();
     resource_cache_free();
     video_exit();
-    // steam_exit();
+    discord_exit();
 
     SDL_DestroyWindow(window);
     SDL_Quit();
+
+    steam_exit();
     return 0;
 }

@@ -124,8 +124,6 @@ void video_init(SDL_Window* window, bool use_debug)
     std::wstring_convert<convert_type, wchar_t> converter;
     std::string device_name = converter.to_bytes(desc.Description);
 
-    log("[video] Using GPU %s", device_name.c_str());
-
     /// @note(ame): initialize descriptor heaps
     descriptor_heap_init(&video.rtv_heap, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2048);
     descriptor_heap_init(&video.dsv_heap, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 2048);
@@ -163,6 +161,8 @@ void video_init(SDL_Window* window, bool use_debug)
     
     // @note(ame): Probably shouldn't do that
     //IO.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    IO.FontDefault = IO.Fonts->AddFontFromFileTTF("assets/fonts/palr45w.ttf", 16);
+    IO.Fonts->Build();
 
     ImGui::StyleColorsDark();
     ImGuiStyle& Style = ImGui::GetStyle();
@@ -176,6 +176,8 @@ void video_init(SDL_Window* window, bool use_debug)
     ImGui_ImplSDL3_InitForD3D(window); 
 
     video_wait();
+
+    log("[video] video initialized. using GPU %s", device_name.c_str());
 }
 
 void video_resize(u32 width, u32 height)

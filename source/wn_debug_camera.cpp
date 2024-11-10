@@ -8,6 +8,7 @@
 #include <Windows.h>
 
 #include "wn_debug_camera.h"
+#include "wn_input.h"
 
 #define DEBUG_CAMERA_SPEED 3.0f
 
@@ -46,34 +47,24 @@ void debug_camera_init(debug_camera *camera)
     debug_camera_compute_vectors(camera);
 }
 
-void debug_camera_update(debug_camera *camera)
+void debug_camera_update(debug_camera *camera, f32 dt)
 {
-    get_mouse_position(camera->mouse_pos.x, camera->mouse_pos.y);
-
     camera->view = glm::lookAt(camera->position, camera->position + camera->front, glm::vec3(0.0f, 1.0f, 0.0f));
     camera->projection = glm::perspective(glm::radians(90.0f), camera->width / camera->height, 0.001f, 10000.0f);
 
-    debug_camera_compute_vectors(camera);
-}
-
-void debug_camera_input(debug_camera *camera, f32 dt)
-{
-    if (ImGui::IsKeyDown(ImGuiKey_Z))
+    if (input_is_key_pressed_or_down(SDLK_Z))
         camera->position += camera->front * dt * DEBUG_CAMERA_SPEED;
-    if (ImGui::IsKeyDown(ImGuiKey_S))
+    if (input_is_key_pressed_or_down(SDLK_S))
         camera->position -= camera->front * dt * DEBUG_CAMERA_SPEED;
-    if (ImGui::IsKeyDown(ImGuiKey_Q))
+    if (input_is_key_pressed_or_down(SDLK_Q))
         camera->position -= camera->right * dt * DEBUG_CAMERA_SPEED;
-    if (ImGui::IsKeyDown(ImGuiKey_D))
+    if (input_is_key_pressed_or_down(SDLK_D))
         camera->position += camera->right * dt * DEBUG_CAMERA_SPEED;
-    
-    i32 x, y;
-    get_mouse_position(x, y);
 
-    f32 dx = (x - camera->mouse_pos.x) * 0.1f;
-    f32 dy = (y - camera->mouse_pos.y) * 0.1f;
+    f32 dx = input_get_mouse_dx() * 0.1f;
+    f32 dy = input_get_mouse_dy() * 0.1f;
 
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    if (input_is_mouse_down(SDL_BUTTON_LEFT)) {
         camera->yaw += dx;
         camera->pitch -= dy;
     }

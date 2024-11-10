@@ -9,6 +9,7 @@
 #define JPH_DEBUG_RENDERER
 #include <jolt/Jolt.h>
 #include <jolt/Renderer/DebugRenderer.h>
+#include <jolt/Renderer/DebugRendererSimple.h>
 
 #include <glm/glm.hpp>
 
@@ -36,10 +37,10 @@ struct debug_line_vertex
     glm::vec3 color;
 };
 
-constexpr u32 MAX_LINES = 5192 * 4;
+constexpr u32 MAX_LINES = 5192 * 8;
 
 /// @note(ame): Forced to use OOP by the Jolt gods
-struct debug_renderer : public JPH::DebugRenderer
+struct debug_renderer : public JPH::DebugRendererSimple
 {
     debug_renderer();
     ~debug_renderer() = default;
@@ -52,12 +53,8 @@ struct debug_renderer : public JPH::DebugRenderer
     graphics_pipeline line_pipeline;
     root_signature line_signature;
 
-    std::vector<debug_line> lines;
-    std::array<buffer, FRAMES_IN_FLIGHT> line_transfer;
-    std::array<buffer, FRAMES_IN_FLIGHT> line_vtx;
-
     /// @note(ame): Batch implementation
-    struct BatchImpl : public JPH::RefTargetVirtual
+    struct BatchImpl
     {
         bool draw_indexed;
         buffer vertex_buffer;
@@ -70,16 +67,16 @@ struct debug_renderer : public JPH::DebugRenderer
             buffer_free(&vertex_buffer);
             buffer_free(&index_buffer);
         }
-
-        void AddRef() override { ++ref_count; }
-        void Release() override	{ if (--ref_count == 0) delete this; }
     };
+
+    std::vector<debug_line> lines;
+    std::array<buffer, FRAMES_IN_FLIGHT> line_transfer;
+    std::array<buffer, FRAMES_IN_FLIGHT> line_vtx;
+    std::vector<BatchImpl> batches;
 
     /// @note(ame): Override members
     void DrawLine(JPH::RVec3Arg inFrom, JPH::RVec3Arg inTo, JPH::ColorArg inColor) override;
-    void DrawTriangle(JPH::RVec3Arg inV1, JPH::RVec3Arg inV2, JPH::RVec3Arg inV3, JPH::ColorArg inColor, ECastShadow inCastShadow = ECastShadow::Off) override;
-    Batch CreateTriangleBatch(const Triangle *inTriangles, int inTriangleCount) override;
-    Batch CreateTriangleBatch(const Vertex *inVertices, i32 inVertexCount, const u32 *inIndices, i32 inIndexCount) override;
-    void DrawGeometry(JPH::RMat44Arg inModelMatrix, const JPH::AABox &inWorldSpaceBounds, f32 inLODScaleSq, JPH::ColorArg inModelColor, const GeometryRef &inGeometry, ECullMode inCullMode = ECullMode::CullBackFace, ECastShadow inCastShadow = ECastShadow::On, EDrawMode inDrawMode = EDrawMode::Solid) override;
-    void DrawText3D(JPH::RVec3Arg inPosition, const std::string_view &inString, JPH::ColorArg inColor = JPH::Color::sWhite, float inHeight = 0.5f);
+    void DrawText3D(JPH::RVec3Arg inPosition, const std::string_view &inString, JPH::ColorArg inColor = JPH::Color::sWhite, float inHeight = 0.5f) override {}
 };
+
+void debug_draw_line(glm::vec3 p0, glm::vec3 p1, glm::vec3 color = glm::vec3(1.0f));

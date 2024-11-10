@@ -73,7 +73,7 @@ float4 Main(VertexOut vert) : SV_TARGET
             diffuse *= intensity;
             specular *= intensity;
 
-            result = (ambient + diffuse + specular) * 0.6;
+            result = (ambient + diffuse + specular) * 0.2;
         } else {
             result = albedo.xyz * 0.02;
         }

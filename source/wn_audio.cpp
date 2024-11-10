@@ -6,6 +6,7 @@
 
 #include "wn_audio.h"
 #include "wn_output.h"
+#include "wn_common.h"
 
 audio_device audio;
 
@@ -21,7 +22,12 @@ void audio_init()
         throw_error("Failed to initialize FMOD!");
     }
 
-    log("[audio] initialized fmod");
+    char device_name[512];
+    i32 driver_id = 0;
+    audio.system->getDriver(&driver_id);
+    audio.system->getDriverInfo(driver_id, device_name, 512, nullptr, nullptr, nullptr, nullptr);
+
+    log("[audio] initialized fmod. using device %s", device_name);
 
     audio_source_load(&audio.door_open, "assets/sfx/door_open.wav");
     audio_source_load(&audio.door_close, "assets/sfx/door_close.wav");

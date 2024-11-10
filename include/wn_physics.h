@@ -36,6 +36,11 @@
 #include <Jolt/Physics/Character/Character.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollisionCollector.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 
 #include "wn_common.h"
 #include "wn_output.h"
@@ -185,6 +190,7 @@ struct cached_shape : public physics_shape
     cached_shape(const std::string& path, JPH::Ref<JPH::PhysicsMaterial> m = nullptr)
         : shape_path(path)
     {
+        material = m;
         rb_type = RigidbodyType_ConvexHull;
     
         std::ifstream stream(shape_path, std::ios_base::binary);
@@ -199,6 +205,13 @@ struct cached_shape : public physics_shape
     }
 };
 
+struct ray_result
+{
+    f32 t;
+    glm::vec3 point;
+    bool hit;
+};
+
 /// @note(ame): rigidbody
 struct physics_body
 {
@@ -209,6 +222,7 @@ struct physics_body
 
 void physics_body_init(physics_body *body, physics_shape *shape, glm::vec3 position = glm::vec3(0.0f), bool is_static = false, void *user_data = nullptr);
 void physics_body_free(physics_body *body);
+ray_result physics_body_trace_ray(physics_body *body, glm::vec3 start, glm::vec3 end);
 
 /// @note(ame): controllers
 
@@ -225,6 +239,8 @@ glm::mat4 physics_character_get_transform(physics_character *c);
 glm::vec3 physics_character_get_position(physics_character *c);
 void physics_character_set_position(physics_character *c, glm::vec3 p);
 void physics_character_free(physics_character *c);
+ray_result physics_character_trace_ray(physics_character *c, glm::vec3 start, glm::vec3 end);
+ray_result physics_character_trace_ray_dir(physics_character *c, glm::vec3 start, glm::vec3 dir);
 
 /// @note(ame): trigger
 struct physics_trigger
@@ -232,6 +248,7 @@ struct physics_trigger
     /// @note(ame): Serialization data
     glm::vec3 position;
     glm::vec3 size;
+    glm::quat rotation;
 
     JPH::Body* body;
     JPH::Ref<JPH::Shape> shape;
@@ -241,7 +258,7 @@ struct physics_trigger
     std::function<void(entity* collider, entity *collided)> on_trigger_stay = {};
 };
 
-void physics_trigger_init(physics_trigger *trigger, glm::vec3 position = glm::vec3(0.0f), glm::vec3 size = glm::vec3(0.0f), void *user_data = nullptr);
+void physics_trigger_init(physics_trigger *trigger, glm::vec3 position = glm::vec3(0.0f), glm::vec3 size = glm::vec3(0.0f), glm::quat q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f), void *user_data = nullptr);
 glm::vec3 physics_trigger_get_position(physics_trigger *trigger);
 void physics_trigger_set_position(physics_trigger *trigger, glm::vec3 position);
 glm::vec3 physics_trigger_get_rotation(physics_trigger *trigger);

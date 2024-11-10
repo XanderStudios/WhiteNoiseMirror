@@ -94,36 +94,7 @@ void debug_renderer::DrawLine(JPH::RVec3Arg inFrom, JPH::RVec3Arg inTo, JPH::Col
     }
 }
 
-void debug_renderer::DrawTriangle(JPH::RVec3Arg inV1, JPH::RVec3Arg inV2, JPH::RVec3Arg inV3, JPH::ColorArg inColor, ECastShadow inCastShadow)
+void debug_draw_line(glm::vec3 p0, glm::vec3 p1, glm::vec3 color)
 {
-
-}
-
-debug_renderer::Batch debug_renderer::CreateTriangleBatch(const Triangle *inTriangles, int inTriangleCount)
-{
-    JPH::Ref<debug_renderer::BatchImpl> result(new debug_renderer::BatchImpl);
-
-    //buffer_init(&result->vertex_buffer, sizeof(Triangle) * inTriangleCount, sizeof(Triangle), buffer_type::BufferType_Vertex);
-
-    return result;
-}
-
-debug_renderer::Batch debug_renderer::CreateTriangleBatch(const Vertex *inVertices, i32 inVertexCount, const u32 *inIndices, i32 inIndexCount)
-{
-    JPH::Ref<debug_renderer::BatchImpl> result(new debug_renderer::BatchImpl);
-
-    //buffer_init(&result->vertex_buffer, sizeof(Vertex) * inVertexCount, sizeof(Triangle), buffer_type::BufferType_Vertex);
-    //buffer_init(&result->index_buffer, sizeof(u32) * inIndexCount, sizeof(u32), buffer_type::BufferType_Index);
-
-    return result;
-}
-
-void debug_renderer::DrawGeometry(JPH::RMat44Arg inModelMatrix, const JPH::AABox &inWorldSpaceBounds, f32 inLODScaleSq, JPH::ColorArg inModelColor, const GeometryRef &inGeometry, ECullMode inCullMode, ECastShadow inCastShadow, EDrawMode inDrawMode)
-{
-
-}
-
-void debug_renderer::DrawText3D(JPH::RVec3Arg inPosition, const std::string_view &inString, JPH::ColorArg inColor, float inHeight)
-{
-
+    JPH::DebugRenderer::sInstance->DrawArrow(JPH::Vec3(p0.x, p0.y, p0.z), JPH::Vec3(p1.x, p1.y, p1.z), JPH::Color(color.x * 255, color.y * 255, color.z * 255), 0.05f);
 }
