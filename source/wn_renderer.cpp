@@ -10,6 +10,10 @@
 
 game_renderer renderer;
 
+/// SHADOWS
+
+///
+
 /// FORWARD
 void forward_init(u32 width, u32 height);
 void forward_rebuild();
@@ -87,7 +91,7 @@ void composite_render(game_render_info *info)
     command_buffer_set_compute_pipeline(frame->cmd_buffer, &renderer.composite.pipeline.compute);
     command_buffer_set_compute_srv(frame->cmd_buffer, &tvc_get_entry(&renderer.forward.color_buffer, TextureViewType_ShaderResource)->view, 0);
     command_buffer_set_compute_uav(frame->cmd_buffer, &tvc_get_entry(&renderer.composite.ldr_buffer, TextureViewType_Storage, 0)->view, 1);
-    command_buffer_dispatch(frame->cmd_buffer, info->width / 8, info->height / 8, 1);
+    command_buffer_dispatch(frame->cmd_buffer, info->width / 7, info->height / 7, 1);
     command_buffer_image_barrier(frame->cmd_buffer, &renderer.forward.color_buffer, LAYOUT_COMMON);
 
     /// @note(ame): Copy to backbuffer

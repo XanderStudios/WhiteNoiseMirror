@@ -256,6 +256,7 @@ struct physics_trigger
     /// @todo(ame): OnTriggerExit
     std::function<void(entity* collider, entity *collided)> on_trigger_enter = {};
     std::function<void(entity* collider, entity *collided)> on_trigger_stay = {};
+    std::function<void(entity* collider, entity *collided)> on_trigger_exit = {};
 };
 
 void physics_trigger_init(physics_trigger *trigger, glm::vec3 position = glm::vec3(0.0f), glm::vec3 size = glm::vec3(0.0f), glm::quat q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f), void *user_data = nullptr);
@@ -270,6 +271,17 @@ class BPLayerInterfaceImpl;
 class MyContactListener;
 class MyBodyActivationListener;
 
+struct contact_removed_event
+{
+    JPH::BodyID body1;
+    JPH::BodyID body2;
+};
+
+struct contact_removed_queue
+{
+    std::vector<contact_removed_event> events;
+};
+
 struct physics_system
 {
     JPH::PhysicsSystem* system;
@@ -282,6 +294,8 @@ struct physics_system
 
     std::vector<physics_character*> characters;
     timer physics_timer;
+
+    contact_removed_queue contact_queue;
 };
 
 extern physics_system physics;

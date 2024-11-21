@@ -122,17 +122,29 @@ public:
 
     virtual void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override
     {
-        // if (inBody1.GetObjectLayer() == Layers::TRIGGER && inBody2.GetObjectLayer() == Layers::CHARACTER_GHOST) {
-        //     physics_trigger* ptr1 = reinterpret_cast<physics_trigger*>(inBody1.GetUserData());
-        //     entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
-// 
-        //     if (!ptr1 || !ptr2)
-        //         return;
-// 
-        //     if (ptr1->on_trigger_enter) {
-        //         ptr1->on_trigger_enter(ptr2);
-        //     }
-        // }
+        if (inBody1.GetObjectLayer() == Layers::TRIGGER && inBody2.GetObjectLayer() == Layers::CHARACTER_GHOST) {
+            entity* ptr1 = reinterpret_cast<entity*>(inBody1.GetUserData());
+            entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
+
+            if (!ptr1 || !ptr2)
+                return;
+
+            if (ptr1->trigger.on_trigger_enter) {
+                ptr1->trigger.on_trigger_enter(ptr1, ptr2);
+            }
+        }
+
+        if (inBody1.GetObjectLayer() == Layers::CHARACTER_GHOST && inBody2.GetObjectLayer() == Layers::TRIGGER) {
+            entity* ptr1 = reinterpret_cast<entity*>(inBody1.GetUserData());
+            entity* ptr2 = reinterpret_cast<entity*>(inBody2.GetUserData());
+
+            if (!ptr1 || !ptr2)
+                return;
+
+            if (ptr2->trigger.on_trigger_enter) {
+                ptr2->trigger.on_trigger_enter(ptr2, ptr1);
+            }
+        }
     }
 
     virtual void OnContactPersisted(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override
@@ -163,6 +175,13 @@ public:
 	}
 
     /// @todo(ame): on contact removed
+    virtual void OnContactRemoved(const JPH::SubShapeIDPair &inSubShapePair) override
+    {
+        physics.contact_queue.events.push_back({
+            inSubShapePair.GetBody1ID(),
+            inSubShapePair.GetBody2ID()
+        });
+    }
 };
 
 BPLayerInterfaceImpl JoltBroadphaseLayerInterface = BPLayerInterfaceImpl();
@@ -295,6 +314,36 @@ void physics_update()
                     glm::decompose(transform, scale, rotation, pos, skew, pesp);
                 
                     physics.body_interface->MoveKinematic(character->body_index, JPH::Vec3{ pos.x, pos.y, pos.z }, { rotation.x, rotation.y, rotation.z, rotation.w }, min_step_duration);
+                }
+
+                /// @note(ame): Update contat queue
+                if (!physics.contact_queue.events.empty()) {
+                    for (auto& contact : physics.contact_queue.events) {
+                        JPH::ObjectLayer layer1 = physics.body_interface->GetObjectLayer(contact.body1);
+                        JPH::ObjectLayer layer2 = physics.body_interface->GetObjectLayer(contact.body2);
+                        void* user_data1 = (void*)physics.body_interface->GetUserData(contact.body1);
+                        void* user_data2 = (void*)physics.body_interface->GetUserData(contact.body2);
+
+                        if (layer1 == Layers::TRIGGER && layer2 == Layers::CHARACTER_GHOST) {
+                            entity* ptr1 = reinterpret_cast<entity*>(user_data1);
+                            entity* ptr2 = reinterpret_cast<entity*>(user_data2);
+                            if (!ptr1 || !ptr2)
+                                return;
+                            if (ptr1->trigger.on_trigger_exit) {
+                                ptr1->trigger.on_trigger_exit(ptr1, ptr2);
+                            }
+                        }
+                        if (layer1 == Layers::CHARACTER_GHOST && layer2 == Layers::TRIGGER) {
+                            entity* ptr1 = reinterpret_cast<entity*>(user_data1);
+                            entity* ptr2 = reinterpret_cast<entity*>(user_data2);
+                            if (!ptr1 || !ptr2)
+                                return;
+                            if (ptr2->trigger.on_trigger_exit) {
+                                ptr2->trigger.on_trigger_exit(ptr2, ptr1);
+                            }
+                        }
+                    }
+                    physics.contact_queue.events.clear();
                 }
             }
         } catch (...) {

@@ -80,6 +80,9 @@ struct gltf_model
 
     u32 vtx_count;
     u32 idx_count;
+
+    std::vector<gltf_vertex> flattened_vertices;
+    std::vector<u32> flattened_indices;
 };
 
 void gltf_model_load(gltf_model *model, const std::string& path, bool generate_collisions = true);

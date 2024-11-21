@@ -10,6 +10,9 @@
 #include "wn_script.h"
 #include "wn_audio.h"
 #include "wn_resource_cache.h"
+#include "wn_ai.h"
+
+struct game_world;
 
 enum entity_type
 {
@@ -22,7 +25,8 @@ enum entity_type
 enum trigger_type
 {
     TriggerType_NotPrecised,
-    TriggerType_Transition
+    TriggerType_Transition,
+    TriggerType_Camera
 };
 
 struct transform
@@ -45,6 +49,7 @@ struct entity
     std::string name;
     transform entity_transform;
     entity_type type;
+    game_world *parent_world;
 
     /// @brief Components
     bool has_model;
@@ -57,7 +62,14 @@ struct entity
     physics_trigger trigger;
     u32 trigger_id;
     trigger_type t_type;
+
+    /// @note(ame): TriggerType_Transition
     std::string trigger_transition;
+
+    /// @note(ame): TriggerType_Camera
+    glm::vec3 point_position;
+    glm::vec3 point_forward;
+    glm::mat4 view_matrix;
 
     /// @note(ame): unique to player entity
     bool has_physics_character;
@@ -69,10 +81,19 @@ struct entity
 
 struct game_world
 {
-    /// @note(ame): World info
+    /// @note(ame): World descriptor
     std::string name;
     std::string serialization_path;
     glm::vec3 start_position;
+    glm::vec3 bbox_min;
+    glm::vec3 bbox_max;
+
+    /// @note(ame): World render data
+    glm::mat4 main_camera_view;
+    bool using_player_cam = true;
+
+    /// @note(ame): World navmesh
+    navmesh world_navmesh;
 
     /// @note(ame): Game objects
     resource* level;
@@ -80,7 +101,9 @@ struct game_world
     std::vector<entity*> entities;
 
     /// @note(ame): register trigger callbacks
+    std::vector<std::function<void(entity* e1, entity *e2)>> on_enter_callbacks;
     std::vector<std::function<void(entity* e1, entity *e2)>> on_stay_callbacks;
+    std::vector<std::function<void(entity* e1, entity *e2)>> on_exit_callbacks;
 };
 
 struct game_world_info

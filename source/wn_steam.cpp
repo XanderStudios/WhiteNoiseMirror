@@ -11,9 +11,8 @@ void steam_init()
 {
     if (!SteamAPI_Init()) {
         log("[steam] failed to initialize steam!");
-        throw_error("steam error");
-    }
-    log("[steam] initialized steam");
+    } else
+        log("[steam] initialized steam");
 }
 
 void steam_exit()

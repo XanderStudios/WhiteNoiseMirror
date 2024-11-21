@@ -34,6 +34,8 @@
 #include "wn_player.h"
 #include "wn_input.h"
 #include "wn_discord.h"
+#include "wn_dev_console.h"
+#include "wn_cvar.h"
 
 #define WINDOW_WIDTH 1600
 #define WINDOW_HEIGHT 900
@@ -42,8 +44,6 @@ notification_handler noti_handler;
 
 int main(void)
 {
-    steam_init();
-
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         throw_error("Failed to initialize SDL3!");
     }
@@ -54,7 +54,9 @@ int main(void)
     }
 
     /// @note(ame): initialize system
+    steam_init();
     bitmap_compress_recursive("assets/");
+    cvar_load("assets/cvars.json");
     discord_init();
     video_init(window);
     resource_cache_init();
@@ -63,6 +65,7 @@ int main(void)
     script_system_init();
     game_renderer_init(WINDOW_WIDTH, WINDOW_HEIGHT);
     input_init();
+    dev_console_init();
 
     /// @note(ame): init mappings
     input_add_mapping_binding_key("Forward", SDLK_Z);
@@ -92,10 +95,11 @@ int main(void)
 
     bool editor_mode = true;
     bool draw_mesh = true;
-    bool draw_debug = false;
     bool draw_skeleton = false;
-    bool lit_scene = false;
     bool vsync = true;
+
+    console_var* draw_debug = cvar_get("mat_draw_debug");
+    console_var* lit = cvar_get("mat_lit");
 
     /// @note(ame): main loop
     bool exit = false;
@@ -130,7 +134,7 @@ int main(void)
             audio_update();
             physics_update();
             game_world_update(&world, dt);
-            view_to_use = player_get_view(&world.player);
+            view_to_use = world.main_camera_view;
         } else {
             if (!io.WantCaptureMouse && editor_mode)
                 debug_camera_update(&camera, dt);
@@ -154,8 +158,8 @@ int main(void)
             &world,
             &frame,
             draw_mesh,
-            draw_debug,
-            lit_scene
+            draw_debug->as.b,
+            lit->as.b
         };
         game_renderer_render(&render_info);
 
@@ -166,14 +170,16 @@ int main(void)
 
         /// @note(ame): Panel
         if (editor_mode) {
+            dev_console_draw(nullptr, nullptr);
+
             /// @note(ame): World panel
             ImGui::Begin("Renderer");
             if (ImGui::TreeNodeEx("Renderer", ImGuiTreeNodeFlags_Framed)) {
                 ImGui::Checkbox("Draw Mesh", &draw_mesh);
                 ImGui::Checkbox("Draw Skeleton", &draw_skeleton);
-                ImGui::Checkbox("Draw Bounding Boxes", &draw_debug);
+                ImGui::Checkbox("Draw Bounding Boxes", &draw_debug->as.b);
                 ImGui::Checkbox("VSync", &vsync);
-                ImGui::Checkbox("Lit", &lit_scene);
+                ImGui::Checkbox("Lit", &lit->as.b);
                 ImGui::TreePop();
             }
             ImGui::End();
@@ -234,6 +240,7 @@ int main(void)
     video_wait();
     game_world_free(&world);
     
+    dev_console_shutdown();
     input_exit();
     game_renderer_free();
     script_system_exit();
@@ -242,10 +249,10 @@ int main(void)
     resource_cache_free();
     video_exit();
     discord_exit();
+    cvar_save("assets/cvars.json");
+    steam_exit();
 
     SDL_DestroyWindow(window);
     SDL_Quit();
-
-    steam_exit();
     return 0;
 }

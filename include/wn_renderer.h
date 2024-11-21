@@ -13,6 +13,12 @@
 #include "wn_debug_renderer.h"
 #include "wn_physics.h"
 
+struct game_shadows
+{
+    hot_pipeline spot_light_shadows;
+    texture flashlight_shadow;
+};
+
 struct game_forward
 {
     hot_pipeline pipeline;
@@ -27,7 +33,8 @@ struct game_forward
 
     glm::vec3 flashlight_position;
     glm::vec3 flashlight_direction;
-    f32 cutoff;
+    f32 inner_cutoff;
+    f32 outer_cutoff;
 };
 
 struct game_composite

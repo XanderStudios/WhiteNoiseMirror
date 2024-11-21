@@ -15,6 +15,7 @@
 #include "wn_video.h"
 #include "wn_resource_cache.h"
 #include "wn_util.h"
+#include "wn_ai.h"
 
 #define CACHE_PHYSICS 1
 
@@ -55,6 +56,7 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
 
     std::vector<gltf_vertex> vertices = {};
     JPH::Array<JPH::Vec3> points = {};
+    std::vector<glm::vec3> glm_points = {};
     std::vector<u32> indices = {};
 
     for (i32 i = 0; i < vertex_count; i++) {
@@ -79,6 +81,7 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
         glm::vec4 untransformed_point = node->transform * glm::vec4(vertex.Position, 1.0f);
 
         points.push_back(JPH::Vec3(untransformed_point.x, untransformed_point.y, untransformed_point.z));
+        glm_points.push_back(glm::vec3(untransformed_point));
         vertices.push_back(vertex);
     }
 
@@ -89,9 +92,9 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
     out.vtx_count = vertex_count;
     out.idx_count = index_count;
 
-    /// @todo(ame): le physics
     if (model->gen_collisions) {
 #if CACHE_PHYSICS
+        /// @todo(ame): le physics
         std::stringstream ss;
         ss << ".cache/" << wn_hash(model->path.c_str(), model->path.size(), 1000) << "_" << std::to_string(model->physics_counter) << ".wnp";
         if (fs_exists(ss.str())) {
@@ -110,6 +113,12 @@ void gltf_process_primitive(gltf_model *model, cgltf_primitive *primitive, gltf_
 #endif
     }
     model->physics_counter++;
+
+    i32 vertex_offset = model->flattened_vertices.size(); // Assuming 3 components per vertex
+    model->flattened_vertices.insert(model->flattened_vertices.end(), vertices.begin(), vertices.end());
+    for (i32 index : indices) {
+        model->flattened_indices.push_back(index + vertex_offset);
+    }
 
     /// @note(ame): create buffers
     buffer_init(&out.vertex_buffer, vertices.size() * sizeof(gltf_vertex), sizeof(gltf_vertex), BufferType_Vertex, false, node->name + " Vertex Buffer");

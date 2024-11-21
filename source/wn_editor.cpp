@@ -77,8 +77,8 @@ void editor_manipulate(game_world *world, game_render_info *info)
     if (editor.selected_trigger) {
         ImGui::Text("TRIGGER:");
         
-        static const char* trigger_types[] = { "Not Precised", "Transition" };
-        ImGui::Combo("Trigger Type", (int*)&editor.selected_trigger->t_type, trigger_types, 2, 2);
+        static const char* trigger_types[] = { "Not Precised", "Transition", "Camera" };
+        ImGui::Combo("Trigger Type", (int*)&editor.selected_trigger->t_type, trigger_types, 3, 3);
     
         if (editor.selected_trigger->t_type == TriggerType_Transition) {
             char buffer[512];

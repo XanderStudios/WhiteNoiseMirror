@@ -33,8 +33,30 @@ void game_world_load(game_world *world, const std::string& path)
     /// @note(ame): load levels
     world->name = root["name"];
     world->serialization_path = path;
+
+    /// @note(ame): Load level min and max
+    if (root.contains("bbox_min")) {
+        world->bbox_min.x = root["bbox_min"][0].template get<float>();
+        world->bbox_min.y = root["bbox_min"][1].template get<float>();
+        world->bbox_min.z = root["bbox_min"][2].template get<float>();
+    }
+    if (root.contains("bbox_max")) {
+        world->bbox_max.x = root["bbox_max"][0].template get<float>();
+        world->bbox_max.y = root["bbox_max"][1].template get<float>();
+        world->bbox_max.z = root["bbox_max"][2].template get<float>();
+    }
+
+    /// @note(ame): Load level geometry
     world->level = resource_cache_get(root["level_model"], ResourceType_GLTF, true);
     
+    /// @note(ame): Create level navmesh
+    navmesh_build_info info;
+    info.min = world->bbox_min;
+    info.max = world->bbox_max;
+    info.vertices = world->level->model.flattened_vertices;
+    info.indices = world->level->model.flattened_indices;
+    //navmesh_init(&world->world_navmesh, info);
+
     /// @note(ame): Load start position and player
     world->start_position.x = root["start_pos"][0].template get<float>();
     world->start_position.y = root["start_pos"][1].template get<float>();
@@ -70,7 +92,25 @@ void game_world_load(game_world *world, const std::string& path)
             new_entity->trigger_transition = trigger["transition_level"].template get<std::string>();
             new_entity->t_type = TriggerType_Transition;
         }
+        if (type.compare("camera") == 0) {
+            new_entity->t_type = TriggerType_Camera;
+
+            glm::vec3 point_position;
+            point_position.x = trigger["camera_point"][0].template get<float>();
+            point_position.y = trigger["camera_point"][1].template get<float>();
+            point_position.z = trigger["camera_point"][2].template get<float>();
+
+            glm::vec3 point_forward;
+            point_forward.x = trigger["camera_forward"][0].template get<float>();
+            point_forward.y = trigger["camera_forward"][1].template get<float>();
+            point_forward.z = trigger["camera_forward"][2].template get<float>();
+
+            new_entity->point_position = point_position;
+            new_entity->point_forward = point_forward;
+        }
     }
+
+    world->main_camera_view = player_get_view(&world->player);
 
     /// @note(ame): Done!
     log("[world] Loaded world %s", path.c_str());
@@ -98,19 +138,49 @@ entity* game_world_add_trigger(game_world *world, glm::vec3 position, glm::vec3 
     new_entity->id = wn_uuid();
     new_entity->has_trigger = true;
     new_entity->trigger_id = new_entity->id;
+    new_entity->parent_world = world;
 
     physics_trigger_init(&new_entity->trigger, position, size, q, new_entity);
 
-    auto function = [&](entity* trigger, entity *e) {
-        if (input_get_mapping_value("Interact", false)) {
-            notification_payload payload;
-            payload.type = NotificationType_LevelChange;
-            payload.level_change.level_path = trigger->trigger_transition;
-            game_send_notification(payload);
-        }
-    };
-    world->on_stay_callbacks.push_back(function);
-    new_entity->trigger.on_trigger_stay = world->on_stay_callbacks.back();
+    /// @note(ame): for transitions
+    {
+        auto stay_function = [&](entity* trigger, entity *e) {
+            if (input_get_mapping_value("Interact", false) && trigger->t_type == TriggerType_Transition) {
+                notification_payload payload;
+                payload.type = NotificationType_LevelChange;
+                payload.level_change.level_path = trigger->trigger_transition;
+                game_send_notification(payload);
+            }
+        };
+        world->on_stay_callbacks.push_back(stay_function);
+        new_entity->trigger.on_trigger_stay = world->on_stay_callbacks.back();
+    }
+
+    /// @note(ame): for camera triggers
+    {
+        auto enter_function = [&](entity* trigger, entity *e) {
+            if (e->has_physics_character && trigger->t_type == TriggerType_Camera) {
+                /// @note(ame): Assume that this is a player
+
+                /// @note(ame): I might change this to not recompute the view matrix on enter, but it is what it is
+                trigger->view_matrix = glm::lookAt(trigger->point_position, trigger->point_position + glm::normalize(trigger->point_forward), glm::vec3(0, 1, 0));
+
+                trigger->parent_world->main_camera_view = trigger->view_matrix;
+                trigger->parent_world->using_player_cam = false;
+            }
+        };
+        world->on_enter_callbacks.push_back(enter_function);
+        new_entity->trigger.on_trigger_enter = world->on_enter_callbacks.back();
+
+        auto exit_function = [&](entity* trigger, entity *e) {
+            if (e->has_physics_character && trigger->t_type == TriggerType_Camera) {
+                trigger->parent_world->main_camera_view = player_get_view(&trigger->parent_world->player);
+                trigger->parent_world->using_player_cam = true;
+            }
+        };
+        world->on_exit_callbacks.push_back(exit_function);
+        new_entity->trigger.on_trigger_exit = world->on_exit_callbacks.back();
+    }
 
     new_entity->t_type = TriggerType_NotPrecised;
     world->entities.push_back(new_entity);
@@ -157,6 +227,15 @@ void game_world_save(game_world *world, const std::string& path)
                 entity_root["type"] = "transition";
                 entity_root["transition_level"] = entity->trigger_transition;
             }
+            if (entity->t_type == TriggerType_Camera) {
+                entity_root["type"] = "camera";
+                entity_root["camera_point"][0] = entity->point_position.x;
+                entity_root["camera_point"][1] = entity->point_position.y;
+                entity_root["camera_point"][2] = entity->point_position.z;
+                entity_root["camera_forward"][0] = entity->point_forward.x;
+                entity_root["camera_forward"][1] = entity->point_forward.y;
+                entity_root["camera_forward"][2] = entity->point_forward.z;
+            }
 
             root["triggers"].push_back(entity_root);
         }
@@ -168,6 +247,10 @@ void game_world_save(game_world *world, const std::string& path)
 void game_world_update(game_world *world, f32 dt)
 {
     player_update(&world->player, dt);
+
+    if (world->using_player_cam) {
+        world->main_camera_view = player_get_view(&world->player);
+    }
 }
 
 void game_world_free(game_world *world)
@@ -179,6 +262,7 @@ void game_world_free(game_world *world)
         delete entity;
     }
 
+    //navmesh_free(&world->world_navmesh);
     world->on_stay_callbacks.clear();
     world->entities.clear();
     player_free(&world->player);

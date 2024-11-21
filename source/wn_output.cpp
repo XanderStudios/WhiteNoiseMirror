@@ -5,6 +5,7 @@
 //
 
 #include "wn_output.h"
+#include "wn_dev_console.h"
 
 #include <sstream>
 #include <iomanip>
@@ -31,4 +32,6 @@ void log(const char* msg, ...)
     va_end(vl);
     ss << buf << std::endl;
     std::cout << ss.str();
+
+    dev_console_add_log(ss.str().c_str());
 }

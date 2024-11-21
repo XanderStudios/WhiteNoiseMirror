@@ -47,11 +47,6 @@ void player_update(entity *p, f32 dt)
     p_data.cam_position.y = position.y + v_distance;
     p_data.cam_position.z = position.z - offset_z;
 
-    /// @note(ame): Player controller
-    p_data.forward.x = position.x - p_data.cam_position.x;
-    p_data.forward.z = position.z - p_data.cam_position.z;
-    p_data.forward = glm::normalize(p_data.forward);
-
     /// @note(ame): test raycast
     glm::vec3 offset_position = position - (p_data.forward * 0.1f);
     p_data.last_ray = physics_character_trace_ray(&p->character, offset_position, p_data.cam_position);
@@ -70,7 +65,14 @@ void player_update(entity *p, f32 dt)
 
     /// @note(ame): gamepad
     {
-        velocity = -p_data.forward * input_get_mapping_value_analog("ForwardBackward") * speed_modifier;
+        f32 value = input_get_mapping_value_analog("ForwardBackward");
+        if (value > 0.0 || value < 0.0) {
+            p_data.forward.x = position.x - p_data.cam_position.x;
+            p_data.forward.z = position.z - p_data.cam_position.z;
+            p_data.forward = glm::normalize(p_data.forward);
+
+            velocity = -p_data.forward * input_get_mapping_value_analog("ForwardBackward") * speed_modifier;
+        }
         p_data.yaw -= input_get_mapping_value_analog("RotateLeftRight");
         p_data.pitch -= input_get_mapping_value_analog("RotateUpDown");
     }
@@ -82,10 +84,20 @@ void player_update(entity *p, f32 dt)
             p_data.pitch -= input_get_mouse_dy() * 0.1f;
         }
 
-        if (input_get_mapping_value("Forward", true))
+        if (input_get_mapping_value("Forward", true)) {
+            p_data.forward.x = position.x - p_data.cam_position.x;
+            p_data.forward.z = position.z - p_data.cam_position.z;
+            p_data.forward = glm::normalize(p_data.forward);
+
             velocity = p_data.forward * speed_modifier;
-        if (input_get_mapping_value("Backward", true))
+        }
+        if (input_get_mapping_value("Backward", true)) {
+            p_data.forward.x = position.x - p_data.cam_position.x;
+            p_data.forward.z = position.z - p_data.cam_position.z;
+            p_data.forward = glm::normalize(p_data.forward);
+
             velocity = -p_data.forward * speed_modifier;
+        }
         if (input_get_mapping_value("TurnLeft", true))
             p_data.yaw += 1.0f;
         if (input_get_mapping_value("TurnRight", true))
